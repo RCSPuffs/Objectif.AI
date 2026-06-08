@@ -1,0 +1,75 @@
+GNU AFFERO GENERAL PUBLIC LICENSE
+Version 3, 19 November 2007
+
+Copyright (C) 2024 Objectif.AI Contributors
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as
+published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+---
+
+THIRD-PARTY COMPONENTS
+
+This software uses the following open-source components:
+
+- Ultralytics YOLO (https://github.com/ultralytics/ultralytics)
+  License: AGPL-3.0
+  Copyright (C) Ultralytics
+
+- FastAPI (https://github.com/tiangolo/fastapi)
+  License: MIT
+
+- uvicorn (https://github.com/encode/uvicorn)
+  License: BSD-3-Clause
+
+- python-multipart (https://github.com/Kludex/python-multipart)
+  License: Apache 2.0
+
+- PyYAML (https://github.com/yaml/pyyaml)
+  License: MIT
+
+- PyTorch / torchvision (https://github.com/pytorch/pytorch)
+  License: BSD-3-Clause
+
+- ONNX Runtime (https://github.com/microsoft/onnxruntime)
+  License: MIT
+
+- OpenVINO (https://github.com/openvinotoolkit/openvino)
+  License: Apache 2.0
+
+- OpenCV (https://github.com/opencv/opencv)
+  License: Apache 2.0
+
+- Pillow (https://github.com/python-pillow/Pillow)
+  License: HPND (Historical Permission Notice and Disclaimer)
+
+- NumPy (https://github.com/numpy/numpy)
+  License: BSD-3-Clause
+
+- psutil (https://github.com/giampaolo/psutil)
+  License: BSD-3-Clause
+
+- py-cpuinfo (https://github.com/workhorsy/py-cpuinfo)
+  License: MIT
+
+- seaborn (https://github.com/mwaskom/seaborn)
+  License: BSD-3-Clause
+
+- pandas (https://github.com/pandas-dev/pandas)
+  License: BSD-3-Clause
+
+- matplotlib (https://github.com/matplotlib/matplotlib)
+  License: matplotlib License (BSD-compatible)
+
+Full license texts for all dependencies are available at their
+respective project URLs above.

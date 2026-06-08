@@ -1,0 +1,54 @@
+# Objectif.AI — Python dependencies
+# Install with: pip install -r requirements.txt
+
+# Core server
+fastapi>=0.110.0
+uvicorn[standard]>=0.29.0
+python-multipart>=0.0.9
+pyyaml>=6.0
+
+# Image processing
+opencv-python>=4.9.0
+Pillow>=10.0.0
+numpy>=1.26.0
+
+# YOLO / detection (Ultralytics covers YOLO v8/v9/v10/v11/v26/RT-DETR)
+ultralytics>=8.3.0
+
+# Torchvision detection models (Faster R-CNN, SSD, RetinaNet)
+torchvision>=0.17.0
+
+# torchhub engine dependency — the torchhub code path in detector.py still exists
+# for potential future use. The YOLOv5 repo imports these at top level even for
+# inference, so they must be present if any torchhub model is ever loaded.
+# (Current YOLOv5 models use the ultralytics engine and do NOT require these.)
+seaborn>=0.12.0
+pandas>=1.5.0
+matplotlib>=3.7.0
+
+# ONNX Runtime (CPU — works on all hardware)
+onnxruntime>=1.18.0
+
+# Hardware detection helpers
+psutil>=5.9.0
+py-cpuinfo>=9.0.0
+
+# (System tray icon removed — pystray caused launch issues across different
+#  Windows launch methods and has been disabled)
+
+# ──────────────────────────────────────────────────────────────
+# OPTIONAL — install the appropriate one for your GPU:
+# ──────────────────────────────────────────────────────────────
+
+# NVIDIA GPU (CUDA) — install the CUDA version of PyTorch instead:
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+# Then also:
+#   pip install onnxruntime-gpu
+
+# Intel GPU (OpenVINO):
+#   pip install openvino>=2024.0
+#   pip install onnxruntime-openvino
+
+# AMD GPU (ROCm — Linux only, experimental on Windows):
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/rocm6.0
+# ──────────────────────────────────────────────────────────────

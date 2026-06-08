@@ -1,0 +1,1265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Objectif.AI v0.7.8</title>
+<style>
+/* ── Theme variables ─────────────────────────────────── */
+:root {
+  --bg-0:#0d0d0d;--bg-1:#141414;--bg-2:#1a1a1a;--bg-3:#222;--bg-4:#2a2a2a;
+  --border:#2f2f2f;--border-bright:#444;
+  --text-primary:#e8e8e8;--text-secondary:#888;--text-dim:#555;
+  --amber:#f0a500;--amber-dim:#7a5200;
+  --green:#3ddc84;--green-dim:#1a5c38;
+  --red:#ff4d4d;--red-dim:#5c1a1a;
+  --blue:#4d9fff;--blue-dim:#1a3d5c;
+  --cyan:#4dcfcf;--purple:#9b7fe8;
+  --log-info:#888;--log-success:#3ddc84;--log-warning:#f0a500;
+  --log-error:#ff4d4d;--log-request:#4d9fff;--log-detection:#4dcfcf;--log-system:#9b7fe8;
+  --shape-0:#f0a500;--shape-1:#3ddc84;--shape-2:#4d9fff;
+  --shape-3:#ff4d4d;--shape-4:#9b7fe8;--shape-5:#4dcfcf;
+  --shape-6:#ff8c42;--shape-7:#e8e84d;--shape-8:#ff6eb4;--shape-9:#a8e6cf;
+  --font-ui:'Segoe UI',system-ui,sans-serif;
+  --font-mono:Consolas,'Courier New',monospace;
+  --radius:3px;
+}
+[data-theme="light"]{--bg-0:#f5f5f5;--bg-1:#ebebeb;--bg-2:#e0e0e0;--bg-3:#d5d5d5;--bg-4:#cacaca;--border:#ccc;--border-bright:#aaa;--text-primary:#1a1a1a;--text-secondary:#555;--text-dim:#999;}
+[data-theme="solarized"]{--bg-0:#002b36;--bg-1:#073642;--bg-2:#0a3d4a;--bg-3:#0d4555;--bg-4:#104e60;--border:#1a5c6e;--border-bright:#2a7a8e;--text-primary:#fdf6e3;--text-secondary:#93a1a1;--text-dim:#586e75;--amber:#b58900;--green:#859900;--blue:#268bd2;--cyan:#2aa198;}
+[data-theme="dracula"]{--bg-0:#0d0f18;--bg-1:#1a1c2e;--bg-2:#21233a;--bg-3:#282a47;--bg-4:#303354;--border:#3d4070;--border-bright:#6272a4;--text-primary:#f8f8f2;--text-secondary:#bd93f9;--text-dim:#6272a4;--amber:#ffb86c;--green:#50fa7b;--blue:#8be9fd;--cyan:#8be9fd;--red:#ff5555;}
+[data-theme="nord"]{--bg-0:#1a1d23;--bg-1:#1e2228;--bg-2:#232830;--bg-3:#282e38;--bg-4:#2e3440;--border:#3b4252;--border-bright:#434c5e;--text-primary:#eceff4;--text-secondary:#d8dee9;--text-dim:#4c566a;--amber:#ebcb8b;--green:#a3be8c;--blue:#81a1c1;--cyan:#88c0d0;--red:#bf616a;}
+[data-theme="gruvbox"]{--bg-0:#1d2021;--bg-1:#282828;--bg-2:#32302f;--bg-3:#3c3836;--bg-4:#504945;--border:#665c54;--border-bright:#7c6f64;--text-primary:#fbf1c7;--text-secondary:#d5c4a1;--text-dim:#928374;--amber:#fabd2f;--green:#b8bb26;--blue:#83a598;--cyan:#8ec07c;--red:#fb4934;}
+[data-theme="monokai"]{--bg-0:#1a1a1a;--bg-1:#1e1e1e;--bg-2:#232323;--bg-3:#272822;--bg-4:#2e2e2e;--border:#3d3d3d;--border-bright:#555;--text-primary:#f8f8f2;--text-secondary:#cfcfc2;--text-dim:#75715e;--amber:#e6db74;--green:#a6e22e;--blue:#66d9e8;--cyan:#66d9e8;--red:#f92672;}
+[data-theme="ocean"]{--bg-0:#0a1628;--bg-1:#0d1f3a;--bg-2:#102540;--bg-3:#142c4a;--bg-4:#183454;--border:#1e3f6a;--border-bright:#2a5580;--text-primary:#cdd9e8;--text-secondary:#7a9cb8;--text-dim:#3a5a78;--amber:#e0ac4a;--green:#4ecaa0;--blue:#5b9de0;--cyan:#4ecfe0;--red:#e05a5a;}
+[data-theme="forest"]{--bg-0:#0a1a0a;--bg-1:#0f1f0f;--bg-2:#142514;--bg-3:#1a2e1a;--bg-4:#1f351f;--border:#2a4a2a;--border-bright:#3a6a3a;--text-primary:#d4e8d4;--text-secondary:#7aaa7a;--text-dim:#3a6a3a;--amber:#c8a840;--green:#4acc70;--blue:#5a9acc;--cyan:#4accaa;--red:#cc4a4a;}
+[data-theme="rose"]{--bg-0:#1a0d12;--bg-1:#22101a;--bg-2:#2a1422;--bg-3:#32182a;--bg-4:#3a1c32;--border:#55253d;--border-bright:#773558;--text-primary:#f0d8e0;--text-secondary:#c888a0;--text-dim:#885568;--amber:#e0a860;--green:#88cc88;--blue:#8898e0;--cyan:#88cce0;--red:#e05888;}
+[data-theme="highcontrast"]{--bg-0:#000;--bg-1:#0a0a0a;--bg-2:#111;--bg-3:#181818;--bg-4:#202020;--border:#444;--border-bright:#666;--text-primary:#fff;--text-secondary:#ccc;--text-dim:#888;--amber:#ffcc00;--green:#00ff88;--blue:#00aaff;--cyan:#00ffff;--red:#ff3333;}
+
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;background:var(--bg-0);color:var(--text-primary);font-family:var(--font-ui);font-size:13px;overflow:hidden}
+#app{display:flex;flex-direction:column;height:100vh}
+
+/* HEADER */
+#header{height:48px;background:var(--bg-1);border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 16px;gap:10px;flex-shrink:0;user-select:none}
+#header .logo{font-family:var(--font-mono);font-size:15px;font-weight:bold;color:var(--amber);letter-spacing:2px;white-space:nowrap;margin-right:4px;display:flex;align-items:center;gap:2px}
+#header .logo .logo-dot{color:#ff0000;font-size:13px;line-height:1}
+#header .logo span{color:var(--text-secondary)}
+.header-pill{display:flex;align-items:center;gap:6px;background:var(--bg-3);border:1px solid var(--border);border-radius:20px;padding:3px 10px;font-size:11px;color:var(--text-secondary);white-space:nowrap;flex-shrink:0}
+.header-pill .dot{width:7px;height:7px;border-radius:50%;background:var(--text-dim);flex-shrink:0}
+.header-pill .dot.green{background:var(--green);box-shadow:0 0 5px var(--green)}
+.header-pill .dot.amber{background:var(--amber);box-shadow:0 0 5px var(--amber)}
+.header-pill .label{color:var(--text-primary)}
+#header .spacer{flex:1;min-width:8px}
+.hw-badge{font-family:var(--font-mono);font-size:10px;padding:2px 8px;border-radius:2px;border:1px solid;text-transform:uppercase;letter-spacing:1px}
+.hw-badge.cuda{color:var(--green);border-color:var(--green-dim)}
+.hw-badge.cpu{color:var(--text-secondary);border-color:var(--border-bright)}
+.hw-badge.openvino{color:var(--blue);border-color:var(--blue-dim)}
+.hw-badge.rocm{color:var(--red);border-color:var(--red-dim)}
+#inference-pill{display:flex;align-items:center;gap:6px;background:var(--bg-3);border:1px solid var(--border);border-radius:20px;padding:3px 10px;font-size:11px;white-space:nowrap;flex-shrink:0}
+#inference-pill .inf-label{color:var(--text-dim);font-size:10px;text-transform:uppercase;letter-spacing:.5px}
+#inf-last{font-family:var(--font-mono);color:var(--cyan);font-size:12px;font-weight:bold;min-width:50px}
+#inf-avg{font-family:var(--font-mono);color:var(--text-secondary);font-size:11px;min-width:60px}
+.inf-sep{color:var(--text-dim)}
+#uptime{font-family:var(--font-mono);font-size:11px;color:var(--text-dim)}
+
+/* TABS */
+#tabs{height:40px;background:var(--bg-1);border-bottom:1px solid var(--border);display:flex;align-items:flex-end;padding:0 16px;gap:2px;flex-shrink:0}
+.tab{height:34px;padding:0 16px;background:transparent;border:none;border-bottom:2px solid transparent;color:var(--text-secondary);font-family:var(--font-ui);font-size:12px;cursor:pointer;transition:color .15s,border-color .15s;white-space:nowrap;text-transform:uppercase;letter-spacing:.5px}
+.tab:hover{color:var(--text-primary)}
+.tab.active{color:var(--amber);border-bottom-color:var(--amber)}
+
+/* CONTENT */
+#content{flex:1;overflow:hidden;position:relative}
+.panel{display:none;height:100%;overflow:hidden}
+.panel.active{display:flex;flex-direction:column}
+
+/* CONSOLE */
+#panel-console{background:var(--bg-0)}
+#console-toolbar{display:flex;align-items:center;gap:8px;padding:6px 12px;background:var(--bg-1);border-bottom:1px solid var(--border);flex-shrink:0}
+#console-toolbar .toolbar-label{font-size:11px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.5px}
+#console-toolbar .spacer{flex:1}
+.btn-small{padding:3px 10px;background:var(--bg-3);border:1px solid var(--border);border-radius:var(--radius);color:var(--text-secondary);font-size:11px;cursor:pointer;transition:background .1s,color .1s}
+.btn-small:hover{background:var(--bg-4);color:var(--text-primary)}
+#console-log{flex:1;overflow-y:auto;padding:6px 0}
+#console-log::-webkit-scrollbar{width:6px}
+#console-log::-webkit-scrollbar-track{background:var(--bg-1)}
+#console-log::-webkit-scrollbar-thumb{background:var(--bg-4);border-radius:3px}
+.log-line{display:flex;align-items:baseline;padding:1px 12px;font-family:var(--font-mono);font-size:12px;line-height:1.6}
+.log-line:hover{background:var(--bg-2)}
+.log-shape{display:inline-block;width:20px;text-align:center;flex-shrink:0;font-size:11px}
+.log-time{display:inline-block;width:72px;flex-shrink:0;color:var(--text-dim);font-size:11px}
+.log-level-badge{display:inline-block;width:72px;flex-shrink:0;font-size:10px;text-transform:uppercase;letter-spacing:.5px;padding-right:8px}
+.log-msg{flex:1;word-break:break-word}
+.level-info .log-level-badge,.level-info .log-msg{color:var(--log-info)}
+.level-success .log-level-badge,.level-success .log-msg{color:var(--log-success)}
+.level-warning .log-level-badge,.level-warning .log-msg{color:var(--log-warning)}
+.level-error .log-level-badge,.level-error .log-msg{color:var(--log-error)}
+.level-request .log-level-badge{color:var(--log-request)}
+.level-request .log-msg{color:var(--text-primary)}
+.level-detection .log-level-badge{color:var(--log-detection)}
+.level-detection .log-msg{color:var(--text-primary)}
+.level-system .log-level-badge,.level-system .log-msg{color:var(--log-system)}
+.log-detail{display:flex;align-items:baseline;padding:0 12px;font-family:var(--font-mono);font-size:11px;line-height:1.55}
+.log-detail:hover{background:var(--bg-2)}
+.log-detail-indent{display:inline-block;width:176px;flex-shrink:0}
+.log-detail-bullet{color:var(--text-dim);margin-right:6px}
+.log-detail-label{color:var(--text-secondary)}
+.log-detail-conf{font-family:var(--font-mono);margin-left:6px}
+.log-detail-last{padding-bottom:3px}
+.shape-0{color:var(--shape-0)}.shape-1{color:var(--shape-1)}.shape-2{color:var(--shape-2)}
+.shape-3{color:var(--shape-3)}.shape-4{color:var(--shape-4)}.shape-5{color:var(--shape-5)}
+.shape-6{color:var(--shape-6)}.shape-7{color:var(--shape-7)}.shape-8{color:var(--shape-8)}.shape-9{color:var(--shape-9)}
+
+/* MODEL BROWSER */
+#panel-models{overflow:hidden;flex-direction:row}
+#model-sidebar{width:200px;flex-shrink:0;background:var(--bg-1);border-right:1px solid var(--border);overflow-y:auto;padding:8px 0}
+.model-family-btn{display:block;width:100%;padding:7px 16px;background:transparent;border:none;color:var(--text-secondary);font-family:var(--font-ui);font-size:12px;text-align:left;cursor:pointer;transition:background .1s,color .1s}
+.model-family-btn:hover{background:var(--bg-2);color:var(--text-primary)}
+.model-family-btn.active{background:var(--bg-3);color:var(--amber)}
+.model-family-label{padding:12px 16px 4px;font-size:10px;color:var(--text-dim);text-transform:uppercase;letter-spacing:1px}
+#model-list{flex:1;overflow-y:auto;padding:12px;display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:10px;align-content:start}
+.model-card{background:var(--bg-2);border:1px solid var(--border);border-radius:var(--radius);padding:12px;display:flex;flex-direction:column;gap:8px;transition:border-color .15s}
+.model-card:hover{border-color:var(--border-bright)}
+.model-card.active-model{border-color:var(--amber);background:#1a1500}
+.model-card-header{display:flex;align-items:flex-start;gap:8px}
+.model-card-name{font-size:13px;font-weight:600;color:var(--text-primary);flex:1}
+.model-active-badge{font-size:9px;background:var(--amber);color:#000;padding:1px 6px;border-radius:2px;text-transform:uppercase;letter-spacing:1px;font-weight:bold;flex-shrink:0}
+.model-experimental-badge{font-size:9px;background:var(--red-dim);color:var(--red);border:1px solid var(--red-dim);padding:1px 6px;border-radius:2px;text-transform:uppercase;flex-shrink:0}
+.model-desc{font-size:11px;color:var(--text-secondary);line-height:1.5}
+.model-meta{display:flex;gap:12px;flex-wrap:wrap}
+.model-meta-item{display:flex;flex-direction:column;gap:2px}
+.model-meta-label{font-size:9px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.5px}
+.model-meta-value{font-family:var(--font-mono);font-size:11px;color:var(--text-secondary)}
+.rating-bar{display:flex;gap:2px}
+.rating-pip{width:10px;height:6px;border-radius:1px;background:var(--bg-4)}
+.rating-pip.filled{background:var(--amber)}
+.rating-pip.filled.speed{background:var(--green)}
+.hw-tags{display:flex;gap:4px;flex-wrap:wrap}
+.hw-tag{font-size:9px;padding:1px 6px;border-radius:2px;text-transform:uppercase;letter-spacing:.5px;border:1px solid}
+.hw-tag.cuda{color:var(--green);border-color:var(--green-dim);background:#0a1f14}
+.hw-tag.cpu{color:var(--text-secondary);border-color:var(--border-bright);background:var(--bg-3)}
+.hw-tag.openvino{color:var(--blue);border-color:var(--blue-dim);background:#0a1428}
+.hw-tag.rocm{color:var(--red);border-color:var(--red-dim);background:#1f0a0a}
+.model-card-actions{display:flex;gap:6px;align-items:center;margin-top:2px;flex-wrap:wrap}
+.btn{padding:5px 12px;border-radius:var(--radius);border:1px solid;font-size:11px;cursor:pointer;transition:background .1s,color .1s;font-family:var(--font-ui);white-space:nowrap}
+.btn-primary{background:var(--amber);border-color:var(--amber);color:#000;font-weight:600}
+.btn-primary:hover{background:#ffc233}
+.btn-primary:disabled{background:var(--amber-dim);border-color:var(--amber-dim);color:#555;cursor:not-allowed}
+.btn-secondary{background:transparent;border-color:var(--border-bright);color:var(--text-secondary)}
+.btn-secondary:hover{background:var(--bg-3);color:var(--text-primary)}
+.btn-secondary:disabled{opacity:.4;cursor:not-allowed}
+.btn-danger{background:transparent;border-color:var(--red-dim);color:var(--red)}
+.btn-danger:hover{background:var(--red-dim)}
+.btn-green{background:var(--green);border-color:var(--green);color:#000;font-weight:600}
+.btn-green:hover{background:#5ef0a0}
+.download-progress{flex:1;display:flex;align-items:center;gap:8px}
+.progress-bar-bg{flex:1;height:4px;background:var(--bg-4);border-radius:2px;overflow:hidden}
+.progress-bar-fill{height:100%;background:var(--blue);border-radius:2px;transition:width .3s}
+.progress-pct{font-family:var(--font-mono);font-size:11px;color:var(--blue);width:36px;text-align:right}
+
+/* SETTINGS */
+#panel-settings{overflow-y:auto}
+.settings-section{max-width:700px;margin:20px auto;padding:0 20px}
+.settings-section-title{font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--text-dim);margin-bottom:12px;padding-bottom:6px;border-bottom:1px solid var(--border)}
+.settings-row{display:flex;align-items:center;gap:16px;padding:10px 0;border-bottom:1px solid var(--border)}
+.settings-row:last-child{border-bottom:none}
+.settings-label{flex:1}
+.settings-label-title{font-size:13px;color:var(--text-primary);margin-bottom:2px}
+.settings-label-desc{font-size:11px;color:var(--text-dim)}
+.settings-control{flex-shrink:0}
+input[type=range]{-webkit-appearance:none;width:160px;height:4px;background:var(--bg-4);border-radius:2px;outline:none}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;border-radius:50%;background:var(--amber);cursor:pointer}
+.slider-value{font-family:var(--font-mono);font-size:12px;color:var(--amber);text-align:right;min-width:52px}
+.toggle{position:relative;display:inline-block;width:40px;height:22px}
+.toggle input{display:none}
+.toggle-slider{position:absolute;inset:0;background:var(--bg-4);border-radius:11px;border:1px solid var(--border-bright);cursor:pointer;transition:background .2s}
+.toggle-slider::before{content:'';position:absolute;width:16px;height:16px;left:2px;top:2px;background:var(--text-dim);border-radius:50%;transition:transform .2s,background .2s}
+.toggle input:checked+.toggle-slider{background:var(--amber-dim);border-color:var(--amber)}
+.toggle input:checked+.toggle-slider::before{transform:translateX(18px);background:var(--amber)}
+select{background:var(--bg-3);border:1px solid var(--border-bright);color:var(--text-primary);padding:5px 10px;border-radius:var(--radius);font-size:12px;font-family:var(--font-ui);outline:none;cursor:pointer}
+select:focus{border-color:var(--amber)}
+#class-filter-panel{display:none;margin-top:12px}
+#class-filter-panel.visible{display:block}
+.class-group{margin-bottom:12px}
+.class-group-header{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.class-group-name{font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--text-secondary)}
+.class-group-toggle{font-size:10px;color:var(--amber);cursor:pointer;text-decoration:underline}
+.class-chips{display:flex;flex-wrap:wrap;gap:4px}
+.class-chip{display:flex;align-items:center;gap:4px;padding:3px 8px;background:var(--bg-3);border:1px solid var(--border);border-radius:2px;cursor:pointer;transition:background .1s,border-color .1s;user-select:none}
+.class-chip:hover{border-color:var(--border-bright)}
+.class-chip.checked{background:var(--bg-4);border-color:var(--amber)}
+.class-chip input{display:none}
+.class-chip-dot{width:6px;height:6px;border-radius:50%;background:var(--text-dim);flex-shrink:0}
+.class-chip.checked .class-chip-dot{background:var(--amber)}
+.class-chip-label{font-size:11px;color:var(--text-secondary)}
+.class-chip.checked .class-chip-label{color:var(--text-primary)}
+
+/* Theme picker */
+.theme-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin-top:8px}
+.theme-swatch{border:2px solid var(--border);border-radius:4px;padding:6px;cursor:pointer;text-align:center;transition:border-color .15s;background:var(--bg-3)}
+.theme-swatch:hover{border-color:var(--border-bright)}
+.theme-swatch.active{border-color:var(--amber)}
+.theme-swatch-preview{height:20px;border-radius:2px;margin-bottom:4px}
+.theme-swatch-name{font-size:10px;color:var(--text-secondary)}
+
+/* HARDWARE */
+#panel-hardware{overflow-y:auto;padding:20px}
+.hw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px;max-width:1200px}
+.hw-card{background:var(--bg-2);border:1px solid var(--border);border-radius:var(--radius);padding:14px;display:flex;flex-direction:column;gap:0}
+.hw-card.active-backend{border-color:var(--amber);background:#1a1500}
+.hw-card-title{font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--text-dim);margin-bottom:8px}
+.hw-card-name{font-size:14px;color:var(--text-primary);margin-bottom:10px;word-break:break-word}
+.hw-card-row{display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--border);font-size:11px}
+.hw-card-row:last-child{border-bottom:none}
+.hw-card-row-label{color:var(--text-dim)}
+.hw-card-row-value{color:var(--text-secondary);font-family:var(--font-mono)}
+.hw-status-dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;vertical-align:middle}
+.hw-status-dot.available{background:var(--green);box-shadow:0 0 5px var(--green)}
+.hw-status-dot.unavailable{background:var(--text-dim)}
+.hw-status-dot.warning{background:var(--amber);box-shadow:0 0 5px var(--amber)}
+.hw-card-actions{margin-top:12px;display:flex;flex-direction:column;gap:8px}
+.hw-action-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.install-note{font-size:10px;color:var(--text-dim);line-height:1.4}
+.install-note.warn{color:var(--amber)}
+.warning-box{background:#1a1100;border:1px solid var(--amber-dim);border-radius:var(--radius);padding:10px 14px;font-size:12px;color:var(--amber);line-height:1.5;margin-top:12px}
+.pkg-status{font-size:10px;padding:2px 7px;border-radius:2px;border:1px solid;white-space:nowrap}
+.pkg-status.ok{color:var(--green);border-color:var(--green-dim);background:#0a1f14}
+.pkg-status.missing{color:var(--red);border-color:var(--red-dim);background:#1f0a0a}
+.pkg-status.partial{color:var(--amber);border-color:var(--amber-dim);background:#1a1100}
+#install-console{display:none;margin-top:16px;max-width:1200px;background:var(--bg-1);border:1px solid var(--border);border-radius:var(--radius)}
+#install-console.visible{display:block}
+#install-console-header{display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--border)}
+#install-console-title{font-size:11px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.5px;flex:1}
+#install-console-output{height:220px;overflow-y:auto;padding:8px 12px;font-family:var(--font-mono);font-size:11px;line-height:1.6;color:var(--text-secondary)}
+.install-line-ok{color:var(--green)}
+.install-line-err{color:var(--red)}
+.install-line-pip{color:var(--text-secondary)}
+
+  /* DEPENDENCIES */
+  .dep-group-title{font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--text-dim);margin:20px 0 8px;padding-bottom:6px;border-bottom:1px solid var(--border)}
+  .dep-card{background:var(--bg-2);border:1px solid var(--border);border-radius:var(--radius);padding:10px 14px;margin-bottom:6px;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+  .dep-card:hover{border-color:var(--border-bright)}
+  .dep-status-dot{width:9px;height:9px;border-radius:50%;flex-shrink:0}
+  .dep-status-dot.ok{background:var(--green);box-shadow:0 0 5px var(--green)}
+  .dep-status-dot.missing{background:var(--red)}
+  .dep-status-dot.manual{background:var(--amber)}
+  .dep-name{font-size:13px;font-weight:600;color:var(--text-primary);min-width:160px;flex-shrink:0}
+  .dep-desc{font-size:11px;color:var(--text-dim);flex:1;min-width:200px}
+  .dep-version{font-family:var(--font-mono);font-size:10px;color:var(--text-secondary);white-space:nowrap}
+  .dep-status-label{font-size:10px;padding:2px 7px;border-radius:2px;border:1px solid;white-space:nowrap}
+  .dep-status-label.ok{color:var(--green);border-color:var(--green-dim);background:#0a1f14}
+  .dep-status-label.missing{color:var(--red);border-color:var(--red-dim);background:#1f0a0a}
+  .dep-status-label.manual{color:var(--amber);border-color:var(--amber-dim);background:#1a1100}
+  .dep-manual-note{font-size:10px;color:var(--amber);width:100%;padding-left:21px}
+  .dep-required-badge{font-size:9px;padding:1px 5px;background:var(--bg-4);border:1px solid var(--border-bright);border-radius:2px;color:var(--text-dim);white-space:nowrap}
+
+/* HELP */
+#panel-help{overflow-y:auto;padding:24px 32px;max-width:860px;margin:0 auto;width:100%}
+#panel-help h1{font-size:20px;color:var(--amber);margin-bottom:8px;font-family:var(--font-mono)}
+#panel-help h2{font-size:14px;color:var(--cyan);margin:24px 0 8px;text-transform:uppercase;letter-spacing:1px;border-bottom:1px solid var(--border);padding-bottom:4px}
+#panel-help h3{font-size:13px;color:var(--text-primary);margin:16px 0 6px;font-weight:600}
+#panel-help p{font-size:13px;color:var(--text-secondary);line-height:1.7;margin-bottom:8px}
+#panel-help ul,#panel-help ol{padding-left:20px;color:var(--text-secondary);font-size:13px;line-height:1.8;margin-bottom:8px}
+#panel-help code{font-family:var(--font-mono);font-size:11px;background:var(--bg-3);color:var(--cyan);padding:1px 5px;border-radius:2px}
+#panel-help .tip{background:var(--bg-2);border-left:3px solid var(--amber);padding:8px 12px;margin:10px 0;font-size:12px;color:var(--text-secondary)}
+#panel-help table{width:100%;border-collapse:collapse;margin-bottom:12px;font-size:12px}
+#panel-help th{text-align:left;padding:6px 10px;background:var(--bg-3);color:var(--text-secondary);border-bottom:1px solid var(--border)}
+#panel-help td{padding:6px 10px;border-bottom:1px solid var(--border);color:var(--text-secondary)}
+
+
+
+/* WS status */
+#ws-status{position:fixed;bottom:12px;right:16px;font-family:var(--font-mono);font-size:12px;color:var(--text-secondary);display:flex;align-items:center;gap:7px;background:var(--bg-2);border:1px solid var(--border);border-radius:20px;padding:4px 12px}
+#ws-dot{width:9px;height:9px;border-radius:50%;background:var(--text-dim);flex-shrink:0}
+#ws-dot.connected{background:var(--green);box-shadow:0 0 6px var(--green)}
+#ws-dot.reconnecting{background:var(--amber);box-shadow:0 0 6px var(--amber)}
+::-webkit-scrollbar{width:6px;height:6px}
+::-webkit-scrollbar-track{background:var(--bg-1)}
+::-webkit-scrollbar-thumb{background:var(--bg-4);border-radius:3px}
+</style>
+</head>
+<body>
+<div id="app">
+  <!-- HEADER -->
+  <div id="header">
+    <div class="logo">OBJECTIF<span style="color:var(--red)">.</span><span>AI</span></div>
+    <div class="header-pill"><div class="dot" id="model-dot"></div><span id="model-label">No model loaded</span></div>
+    <div class="header-pill"><span class="hw-badge cpu" id="backend-badge">CPU</span><span id="legacy-badge" style="display:none;font-family:var(--font-mono);font-size:9px;background:var(--amber-dim);color:var(--amber);border:1px solid var(--amber-dim);border-radius:2px;padding:1px 5px;margin-left:4px;letter-spacing:1px;text-transform:uppercase">Legacy</span></div>
+    <div id="inference-pill">
+      <span class="inf-label">last</span><span id="inf-last">—</span>
+      <span class="inf-sep">|</span>
+      <span class="inf-label">avg</span><span id="inf-avg">—</span>
+    </div>
+    <div class="header-pill"><span style="color:var(--text-dim)">up</span><span id="uptime" class="label">00:00:00</span></div>
+    <div class="spacer"></div>
+    <div id="hw-summary"></div>
+  </div>
+
+  <!-- TABS -->
+  <div id="tabs">
+    <button class="tab active" data-panel="console">Console</button>
+    <button class="tab" data-panel="models">Model Browser</button>
+    <button class="tab" data-panel="settings">Settings</button>
+    <button class="tab" data-panel="hardware">Hardware</button>
+    <button class="tab" data-panel="deps">Dependencies</button>
+    <button class="tab" data-panel="help">Help</button>
+  </div>
+
+  <!-- CONTENT -->
+  <div id="content">
+
+    <!-- CONSOLE -->
+    <div class="panel active" id="panel-console">
+      <div id="console-toolbar">
+        <span class="toolbar-label">Live Log</span>
+        <div class="spacer"></div>
+        <button class="btn-small" id="btn-clear">Clear</button>
+        <button class="btn-small" id="btn-pause">Pause</button>
+      </div>
+      <div id="console-log"></div>
+    </div>
+
+    <!-- MODEL BROWSER -->
+    <div class="panel" id="panel-models">
+      <div id="model-sidebar">
+        <div class="model-family-label">YOLO</div>
+        <button class="model-family-btn active" data-family="all">All Models</button>
+        <button class="model-family-btn" data-family="YOLOv26">YOLO v26</button>
+        <button class="model-family-btn" data-family="YOLOv11">YOLO v11</button>
+        <button class="model-family-btn" data-family="YOLOv10">YOLO v10</button>
+        <button class="model-family-btn" data-family="YOLOv9">YOLO v9</button>
+        <button class="model-family-btn" data-family="YOLOv8">YOLO v8</button>
+        <button class="model-family-btn" data-family="YOLOv5">YOLO v5</button>
+        <button class="model-family-btn" data-family="RT-DETR">RT-DETR</button>
+        <div class="model-family-label">PyTorch</div>
+        <button class="model-family-btn" data-family="Torchvision">Torchvision</button>
+        <div class="model-family-label" style="color:var(--amber)">⚠ Unsupported</div>
+        <button class="model-family-btn" data-family="EfficientDet">EfficientDet</button>
+        <button class="model-family-btn" data-family="MobileNet">MobileNet SSD</button>
+      </div>
+      <div id="model-list"></div>
+    </div>
+
+    <!-- SETTINGS -->
+    <div class="panel" id="panel-settings">
+      <div class="settings-section">
+        <div class="settings-section-title">Detection</div>
+        <div class="settings-row">
+          <div class="settings-label"><div class="settings-label-title">Minimum Confidence</div><div class="settings-label-desc">Detections below this threshold are not returned to BlueIris</div></div>
+          <div class="settings-control" style="display:flex;align-items:center;gap:10px">
+            <input type="range" id="conf-slider" min="1" max="99" value="30" step="1">
+            <div class="slider-value" id="conf-value">30%</div>
+          </div>
+        </div>
+        <div class="settings-row">
+          <div class="settings-label"><div class="settings-label-title">Class Filter</div><div class="settings-label-desc">When enabled, only selected classes will be returned</div></div>
+          <div class="settings-control"><label class="toggle"><input type="checkbox" id="filter-toggle"><div class="toggle-slider"></div></label></div>
+        </div>
+        <div id="class-filter-panel">
+          <div style="display:flex;gap:8px;margin-bottom:10px">
+            <button class="btn-small" id="btn-select-all">Select All</button>
+            <button class="btn-small" id="btn-select-none">Select None</button>
+          </div>
+          <div id="class-groups"></div>
+        </div>
+      </div>
+      <div class="settings-section">
+        <div class="settings-section-title">Display</div>
+        <div class="settings-row">
+          <div class="settings-label"><div class="settings-label-title">Inference Speed Update Rate</div><div class="settings-label-desc">How often the header inference display refreshes</div></div>
+          <div class="settings-control" style="display:flex;align-items:center;gap:10px">
+            <input type="range" id="inf-update-slider" min="50" max="5000" value="1000" step="50">
+            <div class="slider-value" id="inf-update-value">1.0 s</div>
+          </div>
+        </div>
+        <div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:10px">
+          <div style="display:flex;align-items:center;gap:16px;width:100%">
+            <div class="settings-label"><div class="settings-label-title">Detection Detail Lines</div><div class="settings-label-desc">Show each detected item on its own line, color-coded by confidence</div></div>
+            <div class="settings-control"><label class="toggle"><input type="checkbox" id="expand-toggle" checked><div class="toggle-slider"></div></label></div>
+          </div>
+          <div id="expand-preview" style="background:var(--bg-1);border:1px solid var(--border);border-radius:var(--radius);padding:6px 0;width:100%;font-family:var(--font-mono);font-size:11px;line-height:1.55"></div>
+        </div>
+        <div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:8px">
+          <div class="settings-label-title">Theme</div>
+          <div class="theme-grid" id="theme-grid"></div>
+        </div>
+      </div>
+      <div class="settings-section">
+        <div class="settings-section-title">Console</div>
+        <div class="settings-row">
+          <div class="settings-label"><div class="settings-label-title">Log Buffer Size</div><div class="settings-label-desc">Maximum number of lines kept in memory</div></div>
+          <div class="settings-control">
+            <select id="buffer-select">
+              <option value="500">500 lines</option>
+              <option value="1000" selected>1000 lines</option>
+              <option value="2000">2000 lines</option>
+            </select>
+          </div>
+        </div>
+      </div>
+      <div class="settings-section">
+        <div class="settings-section-title">Server</div>
+        <div class="settings-row" id="service-row" style="display:none">
+          <div class="settings-label"><div class="settings-label-title">Restart Server</div><div class="settings-label-desc">Gracefully shuts down — the scheduled task restarts it automatically within seconds.</div></div>
+          <div class="settings-control"><button class="btn btn-secondary" id="btn-restart-server">Restart Server</button></div>
+        </div>
+        <div class="settings-row" id="service-remove-row" style="display:none">
+          <div class="settings-label"><div class="settings-label-title">Remove from Startup</div><div class="settings-label-desc">Removes the scheduled task — Objectif.AI will no longer start automatically on login.</div></div>
+          <div class="settings-control"><button class="btn btn-danger" id="btn-remove-service">Remove Service</button></div>
+        </div>
+        <div class="settings-row" id="no-service-row">
+          <div class="settings-label"><div class="settings-label-title">Running Manually</div><div class="settings-label-desc">Not installed as a scheduled task. To enable auto-start and server restart, run <code style="color:var(--cyan)">setup-service.bat</code>.</div></div>
+        </div>
+      </div>
+      <div class="settings-section">
+        <div class="settings-section-title">Security</div>
+        <div class="settings-row">
+          <div class="settings-label"><div class="settings-label-title">API Key</div><div class="settings-label-desc">Your API key is stored in config.yaml. The dashboard sends it automatically.</div></div>
+          <div class="settings-control"><button class="btn btn-secondary" id="btn-show-key">Show Key</button></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- HARDWARE -->
+    <div class="panel" id="panel-hardware">
+      <div id="hw-detail"></div>
+      <div id="install-console">
+        <div id="install-console-header">
+          <span id="install-console-title">Install Output</span>
+          <button class="btn-small" id="btn-close-install">Close</button>
+        </div>
+        <div id="install-console-output"></div>
+      </div>
+    </div>
+
+        <!-- DEPENDENCIES -->
+    <div class="panel" id="panel-deps">
+      <div style="overflow-y:auto;height:100%;padding:20px 24px">
+        <div id="deps-loading" style="color:var(--text-dim);font-size:13px;padding:20px 0">Checking dependencies...</div>
+        <div id="deps-python-row" style="display:none;background:var(--bg-2);border:1px solid var(--border);border-radius:var(--radius);padding:10px 14px;margin-bottom:16px;flex-direction:row;align-items:center;gap:12px">
+          <span style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--text-dim)">Python</span>
+          <span id="deps-python-ver" style="font-family:var(--font-mono);color:var(--text-primary)"></span>
+          <span id="deps-python-status"></span>
+        </div>
+        <div id="deps-groups"></div>
+      </div>
+    </div>
+
+    <!-- HELP -->
+    <div class="panel" id="panel-help">
+      <h1>Objectif.AI User Guide</h1>
+      <p style="color:var(--text-dim);font-size:12px;margin-bottom:4px">v0.7.8 — Open source under AGPL-3.0 · <a href="https://github.com/RCSPuffs/Objectif.AI" target="_blank" rel="noopener" style="color:var(--cyan)">Source code</a></p>
+
+      <h2>Quick Start</h2>
+      <ol>
+        <li>Run <code>start.bat</code> (or <code>setup-service.bat</code> for auto-start on login)</li>
+        <li>Open <code>http://localhost:32168</code> — dashboard loads automatically</li>
+        <li>Go to <strong>Model Browser</strong>, find a model, click <strong>Download Model</strong></li>
+        <li>Once downloaded, click <strong>Load Model</strong></li>
+        <li>In BlueIris: AI → Configure → URL: <code>http://&lt;this-machine-ip&gt;:32168</code></li>
+      </ol>
+
+      <h2>Installation</h2>
+      <h3>Manual (start.bat)</h3>
+      <p>Double-click <code>start.bat</code>. Server runs while the console window is open. Good for testing.</p>
+      <h3>As a Scheduled Task (setup-service.bat)</h3>
+      <p>Run <code>setup-service.bat</code> once. Objectif.AI starts automatically on Windows login with no console window. The <strong>Restart Server</strong> button in Settings becomes available when the task is installed. To remove it, run <code>remove-service.bat</code> or use Settings → Server → Remove from Startup.</p>
+      <div class="tip">The task runs as your Windows user account, giving it full GPU access. Restarts automatically on crash.</div>
+
+      <h2>API Key &amp; Security</h2>
+      <p>On first run a random API key is generated and saved to <code>config.yaml</code>. The server embeds it into the dashboard page automatically — no entry required from any device on your network.</p>
+      <p>The key protects management endpoints. The BlueIris detection endpoint (<code>/v1/vision/detection</code>) does <strong>not</strong> require the key.</p>
+      <div class="tip">Keep <code>config.yaml</code> private — it contains your API key. Never commit it to a public repository.</div>
+
+      <h2>BlueIris Configuration</h2>
+      <p>In BlueIris → AI → Configure: Server = Custom, URL = <code>http://&lt;ip&gt;:32168</code>, Path = <code>/v1/vision/detection</code>.</p>
+      <p>Set Objectif.AI's minimum confidence <strong>lower</strong> than your BlueIris threshold so BlueIris receives all candidate detections and decides what to trigger on.</p>
+
+      <h2>Downloading and Loading Models</h2>
+      <p>Every model follows the same flow regardless of type:</p>
+      <ol>
+        <li><strong>Download Model</strong> — downloads the weights file to the <code>models/</code> folder. A progress bar appears during download.</li>
+        <li><strong>Load Model</strong> — loads the downloaded model into memory for inference.</li>
+        <li><strong>Active</strong> — model is serving detections to BlueIris.</li>
+      </ol>
+      <p>YOLO v5 and Torchvision models (Faster R-CNN, SSD, etc.) show an indeterminate progress bar during download — PyTorch does not expose download progress for these. The download is still happening.</p>
+
+      <h2>Choosing a Model</h2>
+      <table>
+        <tr><th>Hardware</th><th>Recommended</th></tr>
+        <tr><td>Old CPU / no GPU</td><td>YOLO v11 Nano</td></tr>
+        <tr><td>Modern CPU only</td><td>YOLO v11 Small</td></tr>
+        <tr><td>NVIDIA GTX 1060 (legacy)</td><td>YOLO v11 Small — auto ONNX export</td></tr>
+        <tr><td>NVIDIA RTX 2070+</td><td>YOLO v11 Medium or Large</td></tr>
+        <tr><td>NVIDIA RTX 3070+</td><td>YOLO v11 Large or v26 Medium</td></tr>
+        <tr><td>Intel Arc / iGPU</td><td>YOLO v8 Small (OpenVINO)</td></tr>
+      </table>
+      <p>Small or Medium works best for most security camera setups. Start there and move up only if you are missing detections you care about.</p>
+
+      <h2>The Console</h2>
+      <p>Each incoming image gets a shape symbol (●, ■, ▲, ◆, ★…). The matching detection result uses the same shape — lets you trace a request to its result even when multiple images arrive at the same time.</p>
+      <ul>
+        <li><span style="color:var(--log-request)">IN</span> — image received from BlueIris</li>
+        <li><span style="color:var(--log-detection)">OUT</span> — detection result returned</li>
+        <li><span style="color:var(--log-system)">SYS</span> — server status messages</li>
+        <li><span style="color:var(--log-warning)">WARN</span> — warnings</li>
+        <li><span style="color:var(--log-error)">ERR</span> — errors</li>
+      </ul>
+      <p>Toggle between expanded (each item on its own line, color-coded by confidence) and compact display in <strong>Settings → Display</strong>.</p>
+
+      <h2>Hardware &amp; GPU Setup</h2>
+      <h3>NVIDIA CUDA</h3>
+      <p>Click <strong>Install PyTorch CUDA</strong> on the Hardware tab (~1.8 GB). After it finishes, run <code>python -m pip install onnxruntime-gpu</code>, then restart.</p>
+      <h3>Legacy GPU — CC below 7.5 (GTX 10-series, Tesla P4, GTX 1060)</h3>
+      <p>Handled automatically. On first YOLO model load, the model is exported to ONNX (up to 60 seconds — progress shown in console) and cached. Subsequent loads are instant. Requires <code>onnxruntime-gpu</code> — install via the Dependencies tab.</p>
+      <p>YOLOv5 and Torchvision models cannot use this path and fall back to CPU.</p>
+      <h3>Intel OpenVINO</h3>
+      <p>Click <strong>Install OpenVINO</strong> on the Hardware tab (~200 MB). Works on Intel Arc and Intel integrated graphics.</p>
+      <h3>AMD ROCm</h3>
+      <p>Experimental, not officially tested. See <a href="https://rocm.docs.amd.com" target="_blank" style="color:var(--blue)">rocm.docs.amd.com</a>.</p>
+
+      <h2>Dependencies Tab</h2>
+      <p>Shows every package Objectif.AI uses, whether it is installed, and provides install buttons where applicable. Check here first if something is not working.</p>
+
+      <h2>Detection Settings</h2>
+      <p><strong>Minimum Confidence:</strong> Server-side floor — detections below this are not sent to BlueIris. Default 30%. Set lower than your BlueIris trigger threshold.</p>
+      <p><strong>Class Filter:</strong> When enabled, only selected COCO classes are returned. Click a category header to toggle all classes in that group at once.</p>
+
+      <h2>Themes</h2>
+      <p>10 themes in <strong>Settings → Display</strong>: Dark, Light, Solarized, Dracula, Nord, Gruvbox, Monokai, Ocean, Forest, Rose, Hi-Contrast. Saved in <code>config.yaml</code>, applies to all browsers.</p>
+
+      <h2>Troubleshooting</h2>
+      <h3>BlueIris not getting detections</h3>
+      <ul>
+        <li>Check a model is loaded (green dot in header)</li>
+        <li>Confirm BlueIris URL matches this machine's IP on port 32168</li>
+        <li>Console — are IN/OUT lines appearing when BlueIris sends images?</li>
+        <li>Lower the minimum confidence threshold in Settings</li>
+        <li>Disable the class filter to rule it out</li>
+      </ul>
+      <h3>GPU not being used</h3>
+      <ul>
+        <li>Hardware tab — check status dots and package badges</li>
+        <li>Dependencies tab — check for missing packages</li>
+        <li>Use Set as Backend on the Hardware card</li>
+        <li>Restart server — model reloads on new backend automatically</li>
+      </ul>
+      <h3>Model shows Download Model after already downloading</h3>
+      <p>For Torchvision models, PyTorch saves to a subfolder under <code>models/</code> that varies by version. Refresh the Model Browser — if the file exists anywhere under <code>models/</code> it should be detected automatically.</p>
+      <h3>Legacy GPU first load is slow</h3>
+      <p>ONNX export takes up to 60 seconds per model, once only. Watch the console for progress. Subsequent loads are instant.</p>
+      <h3>YOLOv5 fails to load</h3>
+      <p>Needs seaborn, pandas, matplotlib — usually installed automatically. If not: <code>pip install seaborn pandas matplotlib</code></p>
+      <h3>Scheduled task not starting</h3>
+      <ul>
+        <li>Check <code>logs/startup.log</code></li>
+        <li>Open Windows Task Scheduler → find ObjectifAI → check Last Run Result</li>
+        <li>Run <code>setup-service.bat</code> again to re-register</li>
+      </ul>
+      <h3>Server crashes on startup</h3>
+      <p>Check <code>logs/startup.log</code> and <code>logs/server.log</code>. Common causes: port 32168 in use, missing package (run <code>pip install -r requirements.txt</code>), corrupt model file (delete from <code>models/</code> and re-download).</p>
+
+      <h2>Updating</h2>
+      <p>Extract the new zip, copy all <code>.py</code> files and <code>static/index.html</code> over your existing folder. Do <strong>not</strong> overwrite <code>config.yaml</code> or the <code>models/</code> folder. Restart the server.</p>
+    </div>
+
+    </div><!-- end content -->
+</div><!-- end app -->
+
+<!-- First-run overlay removed — key injected server-side -->
+
+<div id="ws-status"><div id="ws-dot"></div><span id="ws-label">connecting...</span></div>
+
+<script>
+// ============================================================
+//  STATE & API KEY
+// ============================================================
+const state = {
+  apiKey: '__OBJECTIF_API_KEY__',  // injected by server at page load
+  models: [], config: {}, hardware: {}, installStatus: {},
+  activePanel: 'console', modelFilter: 'all',
+  consolePaused: false, consoleAtBottom: true,
+  ws: null, wsReconnectTimer: null,
+  allowedClasses: new Set(), cocoGroups: {},
+  infUpdateMs: 1000, infLastRaw: null, infAvgRaw: null, infDisplayTimer: null,
+  installRunning: false, currentBackend: 'cpu',
+};
+
+// All API calls go through here so the key is always sent
+async function api(method, path, body) {
+  const opts = { method, headers: { 'X-Api-Key': state.apiKey } };
+  if (body !== undefined) { opts.headers['Content-Type'] = 'application/json'; opts.body = JSON.stringify(body); }
+  return fetch(path, opts);
+}
+
+// ============================================================
+//  INIT — check first run, load key, then boot
+// ============================================================
+async function init() {
+  // API key is injected by the server directly into this page at serve time.
+  // No prompt, no user action needed — just boot.
+  // NOTE: The placeholder check is split across a concat so the server
+  // replacement does not accidentally replace the comparison string too.
+  const placeholder = '__OBJECTIF_' + 'API_KEY__';
+  if (!state.apiKey || state.apiKey === placeholder) {
+    document.body.innerHTML = '<div style="font-family:monospace;background:#0d0d0d;color:#e8e8e8;padding:40px;height:100vh"><h2 style="color:#f0a500">Cannot load dashboard</h2><p style="margin-top:12px;color:#888">Open this via the server: <code style="color:#4dcfcf">http://localhost:32168</code><br>Do not open index.html directly from disk.</p></div>';
+    return;
+  }
+  boot();
+}
+
+async function boot() {
+  connectWS();
+  await fetchStatus();
+  await loadConfig();
+  startInferenceDisplayTimer();
+  setInterval(fetchStatus, 5000);
+  setInterval(() => { if (state.activePanel === 'models') loadModels(); }, 3000);
+  setInterval(() => { if (state.activePanel === 'hardware') loadInstallStatus(); }, 10000);
+}
+
+// ============================================================
+//  WEBSOCKET
+// ============================================================
+async function connectWS() {
+  setWsStatus('reconnecting');
+  // Exchange the API key for a short-lived single-use ticket so the key
+  // never appears in the WS URL (and therefore not in server access logs
+  // or browser history). If the ticket exchange fails for any reason we
+  // fall back to the legacy ?key= path so the dashboard still works.
+  let qs;
+  try {
+    const r = await fetch('/api/auth/ws-ticket', {
+      method: 'POST',
+      headers: { 'X-Api-Key': state.apiKey }
+    });
+    if (!r.ok) throw new Error('ticket fetch failed');
+    const j = await r.json();
+    qs = `ticket=${encodeURIComponent(j.ticket)}`;
+  } catch (e) {
+    qs = `key=${encodeURIComponent(state.apiKey)}`;
+  }
+  const ws = new WebSocket(`ws://${location.host}/ws?${qs}`);
+  state.ws = ws;
+  ws.onopen = () => { setWsStatus('connected'); clearTimeout(state.wsReconnectTimer); };
+  ws.onmessage = (ev) => {
+    let msg; try { msg = JSON.parse(ev.data); } catch { return; }
+    if (msg.type === 'log') appendLogEntry(msg.entry);
+    else if (msg.type === 'history') msg.entries.forEach(appendLogEntry);
+    else if (msg.type === 'download_progress') handleDownloadProgress(msg.data);
+    else if (msg.type === 'inference_stats') handleInferenceStats(msg);
+    else if (msg.type === 'install_output') handleInstallOutput(msg);
+    else if (msg.type === 'ping') ws.send('ping');
+  };
+  ws.onclose = (e) => {
+    setWsStatus('reconnecting');
+    if (e.code === 4401) { alert('WebSocket authentication failed. Please reload the page.'); return; }
+    state.wsReconnectTimer = setTimeout(() => {
+      if (state.apiKey) connectWS();
+    }, 3000);
+  };
+  ws.onerror = () => ws.close();
+  setInterval(() => { if (ws.readyState === WebSocket.OPEN) ws.send('ping'); }, 20000);
+}
+function setWsStatus(s) {
+  document.getElementById('ws-dot').className = s;
+  document.getElementById('ws-label').textContent = s === 'connected' ? 'live' : s === 'reconnecting' ? 'reconnecting...' : 'disconnected';
+}
+
+// ============================================================
+//  INFERENCE STATS
+// ============================================================
+function handleInferenceStats(msg) { state.infLastRaw = msg.last_ms; state.infAvgRaw = msg.avg_ms; }
+function startInferenceDisplayTimer() {
+  if (state.infDisplayTimer) clearInterval(state.infDisplayTimer);
+  state.infDisplayTimer = setInterval(() => {
+    if (state.infLastRaw !== null) {
+      document.getElementById('inf-last').textContent = state.infLastRaw.toFixed(1) + ' ms';
+      document.getElementById('inf-avg').textContent = 'avg ' + state.infAvgRaw.toFixed(1) + ' ms';
+    }
+  }, state.infUpdateMs);
+}
+
+// ============================================================
+//  INSTALL OUTPUT
+// ============================================================
+function handleInstallOutput(msg) {
+  const out = document.getElementById('install-console-output');
+  const ic = document.getElementById('install-console');
+  ic.classList.add('visible');
+  if (msg.status === 'start') {
+    if (!msg.step || msg.step === 1) out.innerHTML = '';
+    const stepInfo = msg.total_steps > 1 ? ` [Step ${msg.step}/${msg.total_steps}]` : '';
+    document.getElementById('install-console-title').textContent = `Installing: ${msg.label}${stepInfo}`;
+    appendInstallLine(`> ${msg.cmd}`, 'install-line-pip');
+    state.installRunning = true; refreshHardwareButtons();
+  } else if (msg.status === 'line') {
+    const lower = msg.text.toLowerCase();
+    const cls = lower.includes('error') || lower.includes('failed') ? 'install-line-err'
+              : lower.includes('successfully') || lower.includes('installed') ? 'install-line-ok'
+              : 'install-line-pip';
+    appendInstallLine(msg.text, cls);
+  } else if (msg.status === 'step_done') {
+    appendInstallLine(msg.success ? `✓ Step complete: ${msg.label}` : `✗ Step failed: ${msg.label}`,
+      msg.success ? 'install-line-ok' : 'install-line-err');
+    if (msg.success && !msg.chain_complete) appendInstallLine('─'.repeat(40), 'install-line-pip');
+  } else if (msg.status === 'done') {
+    appendInstallLine(msg.success ? '✓ All done.' : `✗ Failed (exit code ${msg.returncode})`,
+      msg.success ? 'install-line-ok' : 'install-line-err');
+    state.installRunning = false;
+    document.getElementById('install-console-title').textContent = 'Install Output';
+    setTimeout(() => loadInstallStatus(), 1500);
+  } else if (msg.status === 'error') {
+    appendInstallLine(`✗ Error: ${msg.text}`, 'install-line-err');
+    state.installRunning = false;
+  }
+}
+function appendInstallLine(text, cls) {
+  const out = document.getElementById('install-console-output');
+  const div = document.createElement('div'); div.className = cls; div.textContent = text;
+  out.appendChild(div); out.scrollTop = out.scrollHeight;
+}
+document.getElementById('btn-close-install').addEventListener('click', () => document.getElementById('install-console').classList.remove('visible'));
+
+// ============================================================
+//  CONSOLE
+// ============================================================
+function appendLogEntry(entry) {
+  if (state.consolePaused) return;
+  const log = document.getElementById('console-log');
+  const maxLines = parseInt(state.config?.console?.buffer_size || 1000);
+  const lvlMap = { info:'INFO', success:'OK', warning:'WARN', error:'ERR', request:'IN', detection:'OUT', system:'SYS' };
+  const time = fmtTime(entry.timestamp);
+  const shapeHtml = (entry.shape !== null && entry.shape !== undefined)
+    ? `<span class="log-shape shape-${entry.shape_index % 10}">${entry.shape}</span>`
+    : `<span class="log-shape"></span>`;
+  const expand = state.config?.ui?.detection_expand !== false;
+  const isDetection = entry.level === 'detection';
+  const hasDets = entry.detections && entry.detections.length > 0;
+  let summaryMsg = entry.message;
+  if (isDetection && hasDets && !expand) {
+    const groups = {}; const order = [];
+    entry.detections.forEach(d => { if (!groups[d.label]) { groups[d.label] = []; order.push(d.label); } groups[d.label].push(Math.round(d.confidence * 100)); });
+    const parts = order.map(lbl => `${lbl} ${groups[lbl].join('%, ')}%`);
+    const msMatch = entry.message.match(/—\s*[\d.]+\s*ms/); const msPart = msMatch ? ' ' + msMatch[0] : '';
+    summaryMsg = `Detected: ${parts.join(', ')}${msPart}`;
+  }
+  const div = document.createElement('div');
+  div.className = `log-line level-${entry.level}`;
+  div.innerHTML = `${shapeHtml}<span class="log-time">${time}</span><span class="log-level-badge">${lvlMap[entry.level]||entry.level}</span><span class="log-msg">${esc(summaryMsg)}</span>`;
+  log.appendChild(div);
+  if (isDetection && expand && hasDets) {
+    const groups = {}; const order = [];
+    entry.detections.forEach(d => { if (!groups[d.label]) { groups[d.label] = []; order.push(d.label); } groups[d.label].push(d.confidence); });
+    order.forEach((lbl, gi) => {
+      const isLast = gi === order.length - 1;
+      const confSpans = groups[lbl].map(c => { const pct = Math.round(c*100); const col = pct>=80?'var(--green)':pct>=50?'var(--amber)':'var(--red)'; return `<span style="color:${col}">${pct}%</span>`; }).join('<span style="color:var(--text-dim)">, </span>');
+      const d2 = document.createElement('div'); d2.className = `log-detail${isLast?' log-detail-last':''}`;
+      d2.innerHTML = `<span class="log-detail-indent"></span><span class="log-detail-bullet">·</span><span class="log-detail-label">${esc(lbl)}</span><span class="log-detail-conf">${confSpans}</span>`;
+      log.appendChild(d2);
+    });
+  }
+  while (log.children.length > maxLines) log.removeChild(log.firstChild);
+  if (state.consoleAtBottom) log.scrollTop = log.scrollHeight;
+}
+function fmtTime(ts) { const d = new Date(ts*1000); return [d.getHours(),d.getMinutes(),d.getSeconds()].map(n=>String(n).padStart(2,'0')).join(':'); }
+function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+document.getElementById('console-log').addEventListener('scroll', function() {
+  const atBottom = this.scrollHeight - this.scrollTop - this.clientHeight < 30;
+  state.consoleAtBottom = atBottom;
+  if (atBottom && state.consolePaused) { state.consolePaused = false; document.getElementById('btn-pause').textContent = 'Pause'; }
+});
+document.getElementById('btn-clear').addEventListener('click', () => document.getElementById('console-log').innerHTML = '');
+document.getElementById('btn-pause').addEventListener('click', function() {
+  state.consolePaused = !state.consolePaused; this.textContent = state.consolePaused ? 'Resume' : 'Pause';
+  if (!state.consolePaused) { const log = document.getElementById('console-log'); log.scrollTop = log.scrollHeight; state.consoleAtBottom = true; }
+});
+
+// ============================================================
+//  STATUS
+// ============================================================
+async function fetchStatus() {
+  try { const res = await api('GET', '/api/status'); if (!res.ok) return; updateHeader(await res.json()); } catch {}
+}
+function updateHeader(data) {
+  const dot = document.getElementById('model-dot'), label = document.getElementById('model-label');
+  const newDotClass = data.model ? 'dot green' : data.model_loading ? 'dot amber' : 'dot';
+  const newLabel = data.model ? data.model.name : data.model_loading ? 'Loading...' : 'No model loaded';
+  if (dot.className !== newDotClass) dot.className = newDotClass;
+  if (label.textContent !== newLabel) label.textContent = newLabel;
+  const backend = data.backend || 'cpu';
+  if (state.currentBackend !== backend) {
+    state.currentBackend = backend;
+    const badge = document.getElementById('backend-badge');
+    badge.className = `hw-badge ${backend === 'auto' ? 'cpu' : backend}`;
+    badge.textContent = backend.toUpperCase();
+  }
+  const legacyBadge = document.getElementById('legacy-badge');
+  if (legacyBadge) legacyBadge.style.display = data.legacy_mode ? 'inline' : 'none';
+  const newUp = data.uptime || '00:00:00';
+  const upEl = document.getElementById('uptime');
+  if (upEl.textContent !== newUp) upEl.textContent = newUp;
+  const hwSummary = document.getElementById('hw-summary');
+  if (!hwSummary.dataset.built) {
+    const hw = data.hardware || {}; const parts = [];
+    if (hw.nvidia?.available && !hw.nvidia?.legacy) parts.push(`<span class="hw-badge cuda">${hw.nvidia.name.replace('NVIDIA ','')}</span>`);
+    if (hw.nvidia?.legacy) parts.push(`<span class="hw-badge cpu" title="GPU detected but compute capability too low for PyTorch">Legacy GPU</span>`);
+    if (hw.intel?.gpu_available) parts.push(`<span class="hw-badge openvino">Intel GPU</span>`);
+    if (hw.amd?.gpu_available) parts.push(`<span class="hw-badge rocm">AMD GPU</span>`);
+    if (parts.length === 0) parts.push(`<span class="hw-badge cpu">${(hw.cpu?.name||'CPU').split(' ').slice(0,3).join(' ')}</span>`);
+    hwSummary.innerHTML = parts.join(' ');
+    hwSummary.dataset.built = '1';
+  }
+}
+
+// ============================================================
+//  MODELS
+// ============================================================
+async function loadModels() {
+  try { const res = await api('GET', '/api/models'); const data = await res.json(); state.models = data.models; renderModelList(); } catch {}
+}
+function renderModelList() {
+  const list = document.getElementById('model-list'); list.innerHTML = '';
+  const filtered = state.modelFilter === 'all' ? state.models : state.models.filter(m => m.family === state.modelFilter);
+  filtered.forEach(m => list.appendChild(buildModelCard(m)));
+}
+function buildModelCard(m) {
+  const card = document.createElement('div'); card.className = `model-card${m.is_active?' active-model':''}`; card.id = `model-card-${m.id}`;
+  const hwTags = m.best_hardware.map(h => `<span class="hw-tag ${h}">${h==='openvino'?'Intel':h.toUpperCase()}</span>`).join('');
+  const speedPips = [1,2,3,4,5].map(i => `<div class="rating-pip speed ${i<=m.speed_rating?'filled':''}"></div>`).join('');
+  const accPips = [1,2,3,4,5].map(i => `<div class="rating-pip ${i<=m.accuracy_rating?'filled':''}"></div>`).join('');
+  card.innerHTML = `
+    <div class="model-card-header"><div class="model-card-name">${esc(m.name)}</div>${m.is_active?'<span class="model-active-badge">Active</span>':''}${m.experimental?'<span class="model-experimental-badge">Experimental</span>':''}</div>
+    <div class="model-desc">${esc(m.description)}</div>
+    ${m.notes?`<div class="model-desc" style="color:var(--amber);font-size:10px">⚠ ${esc(m.notes)}</div>`:''}
+    <div class="model-meta">
+      <div class="model-meta-item"><div class="model-meta-label">Speed</div><div class="rating-bar">${speedPips}</div></div>
+      <div class="model-meta-item"><div class="model-meta-label">Accuracy</div><div class="rating-bar">${accPips}</div></div>
+      <div class="model-meta-item"><div class="model-meta-label">Size</div><div class="model-meta-value">${m.size_mb} MB</div></div>
+      <div class="model-meta-item"><div class="model-meta-label">Input</div><div class="model-meta-value">${m.input_size}px</div></div>
+    </div>
+    <div class="hw-tags">${hwTags}</div>
+    <div class="model-card-actions" id="actions-${m.id}">${buildActionButtons(m)}</div>`;
+  return card;
+}
+function buildActionButtons(m) {
+  // Manual install only (no download URL) — ONNX models like EfficientDet
+  if (!m.download_url) {
+    if (m.download_state === 'complete' || m.downloaded) {
+      if (m.is_active) return `<button class="btn btn-secondary" disabled>Active</button><button class="btn btn-danger" onclick="deleteModel('${m.id}')">Delete</button>`;
+      return `<button class="btn btn-green" onclick="activateModel('${m.id}')">Load Model</button><button class="btn btn-danger" onclick="deleteModel('${m.id}')">Delete</button>`;
+    }
+    return `<span style="font-size:11px;color:var(--amber)">⚠ Manual install — place <code style="color:var(--cyan)">${esc(m.filename)}</code> in <code style="color:var(--cyan)">models/</code></span>`;
+  }
+  // Downloading — progress bar (torchvision can't be cancelled; torchhub guard retained defensively)
+  if (m.download_state === 'downloading') {
+    const canCancel = m.engine !== 'torchhub' && m.engine !== 'torchvision';
+    return `<div class="download-progress"><div class="progress-bar-bg"><div class="progress-bar-fill" style="width:${m.download_percent}%"></div></div><div class="progress-pct">${m.download_percent}%</div></div>${canCancel?`<button class="btn btn-danger" onclick="cancelDownload('${m.id}')">Cancel</button>`:''}`;
+  }
+  // Downloaded — same buttons for ALL engine types
+  if (m.download_state === 'complete' || m.downloaded) {
+    if (m.is_active) return `<button class="btn btn-secondary" disabled>Active</button><button class="btn btn-danger" onclick="deleteModel('${m.id}')">Delete</button>`;
+    return `<button class="btn btn-green" onclick="activateModel('${m.id}')">Load Model</button><button class="btn btn-danger" onclick="deleteModel('${m.id}')">Delete</button>`;
+  }
+  // Not downloaded — same for ALL engine types
+  const sizeNote = m.size_mb > 100 ? `<span style="font-size:10px;color:var(--text-dim)">~${m.size_mb>=1000?(m.size_mb/1000).toFixed(1)+'GB':m.size_mb+'MB'}</span>` : '';
+  return `<button class="btn btn-primary" onclick="downloadModel('${m.id}')">Download Model</button>${sizeNote}`;
+}
+async function downloadModel(id) { await api('POST', `/api/models/${id}/download`); setTimeout(loadModels, 500); }
+async function cancelDownload(id) { await api('DELETE', `/api/models/${id}/download`); }
+async function activateModel(id) {
+  const btn = document.querySelector(`#actions-${id} .btn-green`);
+  if (btn) { btn.disabled = true; btn.textContent = 'Loading...'; }
+  const res = await api('POST', `/api/models/${id}/activate`);
+  if (!res.ok) { const d = await res.json(); alert(`Failed: ${d.detail}`); }
+  await loadModels(); fetchStatus();
+}
+async function deleteModel(id) {
+  if (!confirm('Delete this model file from disk?')) return;
+  await api('DELETE', `/api/models/${id}`); await loadModels(); fetchStatus();
+}
+function handleDownloadProgress(data) {
+  const id = data.model_id; const actionsDiv = document.getElementById(`actions-${id}`); if (!actionsDiv) return;
+  const m = state.models.find(x => x.id === id);
+  if (m) { m.download_state = data.state; m.download_percent = data.percent; m.downloaded = data.state === 'complete'; }
+  actionsDiv.innerHTML = buildActionButtons(m || { id, download_state: data.state, download_percent: data.percent });
+  if (['complete','error','cancelled'].includes(data.state)) setTimeout(loadModels, 500);
+}
+document.querySelectorAll('.model-family-btn').forEach(btn => {
+  btn.addEventListener('click', function() {
+    document.querySelectorAll('.model-family-btn').forEach(b => b.classList.remove('active'));
+    this.classList.add('active'); state.modelFilter = this.dataset.family; renderModelList();
+  });
+});
+
+// ============================================================
+//  HARDWARE
+// ============================================================
+async function loadInstallStatus() {
+  try { const res = await api('GET', '/api/install/status'); state.installStatus = await res.json(); if (state.activePanel === 'hardware') renderHardwarePanel(state.hardware); } catch {}
+}
+async function loadHardware() {
+  try { const res = await api('GET', '/api/hardware'); state.hardware = await res.json(); await loadInstallStatus(); renderHardwarePanel(state.hardware); } catch {}
+}
+function renderHardwarePanel(hw) {
+  const s = state.installStatus; const container = document.getElementById('hw-detail');
+  container.innerHTML = '';
+  const grid = document.createElement('div'); grid.className = 'hw-grid';
+
+  // CPU
+  const cpuCard = document.createElement('div'); cpuCard.className = `hw-card${state.currentBackend==='cpu'?' active-backend':''}`;
+  cpuCard.innerHTML = `<div class="hw-card-title">CPU</div><div class="hw-card-name">${esc(hw.cpu?.name||'Unknown')}</div>
+    <div class="hw-card-row"><span class="hw-card-row-label">Cores / Threads</span><span class="hw-card-row-value">${hw.cpu?.cores} / ${hw.cpu?.threads}</span></div>
+    <div class="hw-card-row"><span class="hw-card-row-label">System RAM</span><span class="hw-card-row-value">${hw.cpu?.ram_gb} GB</span></div>
+    <div class="hw-card-row"><span class="hw-card-row-label">Status</span><span class="hw-card-row-value"><span class="hw-status-dot available"></span>Always available</span></div>
+    <div class="hw-card-actions"><div class="hw-action-row"><button class="btn btn-secondary${state.currentBackend==='cpu'?' btn-primary':''}" onclick="switchBackend('cpu')">${state.currentBackend==='cpu'?'✓ Active Backend':'Set as Backend'}</button></div></div>`;
+  grid.appendChild(cpuCard);
+
+  // NVIDIA
+  const nvAvail = hw.nvidia?.available; const nvLegacy = hw.nvidia?.legacy;
+  const torchOk = s?.torch?.has_cuda; const ortGpu = s?.onnxruntime_gpu;
+  const wheelUrl = s?.cuda_wheel_url || ''; const cudaVer = s?.cuda_version || '';
+  const cc = hw.nvidia?.compute_capability || '';
+  let nvStatus, nvPkgStatus = '', nvInstallHtml = '';
+  if (!nvAvail) { nvStatus = `<span class="hw-status-dot unavailable"></span>Not detected`; }
+  else if (nvLegacy) {
+    nvStatus = `<span class="hw-status-dot warning"></span>Legacy GPU (CC ${cc}) — Legacy mode`;
+    nvInstallHtml = `
+      <div class="install-note warn">Compute capability ${cc} is below 7.5 — Legacy GPU Mode active.</div>
+      <div class="install-note">Objectif.AI automatically exports YOLO models to ONNX and runs them via ONNX Runtime CUDA on first load. This takes up to 60 seconds once per model, then loads instantly.</div>
+      <div class="install-note warn">Requires <span style="font-family:var(--font-mono);color:var(--cyan)">onnxruntime-gpu</span>:</div>
+      <div style="margin:4px 0;background:var(--bg-0);border:1px solid var(--border);border-radius:var(--radius);padding:6px 10px;font-family:var(--font-mono);font-size:11px;color:var(--cyan);user-select:all">python -m pip install onnxruntime-gpu</div>
+      <div class="install-note">Note: YOLOv5, Torchvision models fall back to CPU on legacy GPUs (PyTorch CUDA required).</div>`;
+    nvPkgStatus = `<span class="pkg-status ${ortGpu?'ok':'missing'}">onnxruntime-gpu ${ortGpu?'✓':'✗'}</span>`;
+  } else if (torchOk && ortGpu) {
+    nvStatus = `<span class="hw-status-dot available"></span>Ready`;
+    nvPkgStatus = `<span class="pkg-status ok">PyTorch CUDA ✓</span><span class="pkg-status ok">onnxruntime-gpu ✓</span>`;
+  } else if (!torchOk) {
+    nvStatus = `<span class="hw-status-dot warning"></span>Packages needed`;
+    nvPkgStatus = `<span class="pkg-status missing">PyTorch CUDA ✗</span><span class="pkg-status missing">onnxruntime-gpu ✗</span>`;
+    nvInstallHtml = `<div class="install-note">Detected CUDA ${cudaVer} — installs PyTorch (${wheelUrl.split('/').pop()}) (~1.8 GB).</div><div class="install-note">After that: <span style="font-family:var(--font-mono);color:var(--cyan)">python -m pip install onnxruntime-gpu</span></div><div class="install-note warn">⚠ ~1.8 GB download.</div><div class="hw-action-row"><button class="btn btn-primary" onclick="installCuda()" ${state.installRunning?'disabled':''}>Install PyTorch CUDA</button></div>`;
+  } else {
+    nvStatus = `<span class="hw-status-dot available"></span>Ready`;
+    nvPkgStatus = `<span class="pkg-status ok">PyTorch CUDA ✓</span><span class="pkg-status ${ortGpu?'ok':'missing'}">onnxruntime-gpu ${ortGpu?'✓':'✗'}</span>`;
+    if (!ortGpu) nvInstallHtml = `<div class="install-note">PyTorch CUDA installed. Run manually: <span style="font-family:var(--font-mono);color:var(--cyan)">python -m pip install onnxruntime-gpu</span></div>`;
+  }
+  const nvCard = document.createElement('div'); nvCard.className = `hw-card${state.currentBackend==='cuda'?' active-backend':''}`;
+  nvCard.innerHTML = `<div class="hw-card-title">NVIDIA GPU</div><div class="hw-card-name">${esc(nvAvail?hw.nvidia.name:'Not detected')}</div>
+    <div class="hw-card-row"><span class="hw-card-row-label">VRAM</span><span class="hw-card-row-value">${nvAvail?hw.nvidia.vram_gb+' GB':'—'}</span></div>
+    <div class="hw-card-row"><span class="hw-card-row-label">CUDA / CC</span><span class="hw-card-row-value">${hw.nvidia?.cuda_version||'—'}${cc?' / CC '+cc:''}</span></div>
+    <div class="hw-card-row"><span class="hw-card-row-label">Status</span><span class="hw-card-row-value">${nvStatus}</span></div>
+    ${nvPkgStatus?`<div class="hw-card-row"><span class="hw-card-row-label">Packages</span><span class="hw-card-row-value" style="display:flex;gap:4px;flex-wrap:wrap">${nvPkgStatus}</span></div>`:''}
+    <div class="hw-card-actions">${nvInstallHtml}${nvAvail&&!nvLegacy&&torchOk?`<div class="hw-action-row"><button class="btn btn-secondary${state.currentBackend==='cuda'?' btn-primary':''}" onclick="switchBackend('cuda')">${state.currentBackend==='cuda'?'✓ Active Backend':'Set as Backend'}</button></div>`:''}</div>`;
+  grid.appendChild(nvCard);
+
+  // Intel
+  const intelGpu = hw.intel?.gpu_available; const ovinoOk = s?.openvino?.available;
+  let intelStatus, intelPkgStatus = '', intelInstallHtml = '';
+  if (!intelGpu && !hw.intel?.openvino_available) { intelStatus = `<span class="hw-status-dot unavailable"></span>Not detected`; }
+  else if (ovinoOk) { intelStatus = `<span class="hw-status-dot available"></span>Ready`; intelPkgStatus = `<span class="pkg-status ok">OpenVINO ${s.openvino.version} ✓</span>`; }
+  else { intelStatus = `<span class="hw-status-dot warning"></span>OpenVINO not installed`; intelPkgStatus = `<span class="pkg-status missing">OpenVINO ✗</span>`; intelInstallHtml = `<div class="install-note">Installs OpenVINO runtime and onnxruntime-openvino (~200 MB)</div><div class="hw-action-row"><button class="btn btn-primary" onclick="installOpenvino()" ${state.installRunning?'disabled':''}>Install OpenVINO</button></div>`; }
+  const intelCard = document.createElement('div'); intelCard.className = `hw-card${state.currentBackend==='openvino'?' active-backend':''}`;
+  intelCard.innerHTML = `<div class="hw-card-title">Intel GPU / OpenVINO</div><div class="hw-card-name">${esc(intelGpu?hw.intel.gpu_name:'Not detected')}</div>
+    <div class="hw-card-row"><span class="hw-card-row-label">OpenVINO</span><span class="hw-card-row-value">${ovinoOk?s.openvino.version:'Not installed'}</span></div>
+    <div class="hw-card-row"><span class="hw-card-row-label">Status</span><span class="hw-card-row-value">${intelStatus}</span></div>
+    ${intelPkgStatus?`<div class="hw-card-row"><span class="hw-card-row-label">Packages</span><span class="hw-card-row-value">${intelPkgStatus}</span></div>`:''}
+    <div class="hw-card-actions">${intelInstallHtml}${(intelGpu||hw.intel?.openvino_available)&&ovinoOk?`<div class="hw-action-row"><button class="btn btn-secondary${state.currentBackend==='openvino'?' btn-primary':''}" onclick="switchBackend('openvino')">${state.currentBackend==='openvino'?'✓ Active Backend':'Set as Backend'}</button></div>`:''}</div>`;
+  grid.appendChild(intelCard);
+
+  // AMD
+  const amdGpu = hw.amd?.gpu_available; const rocmOk = hw.amd?.rocm_available;
+  const amdCard = document.createElement('div'); amdCard.className = `hw-card${state.currentBackend==='rocm'?' active-backend':''}`;
+  amdCard.innerHTML = `<div class="hw-card-title">AMD GPU / ROCm</div><div class="hw-card-name">${esc(amdGpu?hw.amd.gpu_name:'Not detected')}</div>
+    <div class="hw-card-row"><span class="hw-card-row-label">ROCm</span><span class="hw-card-row-value">${rocmOk?hw.amd.rocm_version:'Not installed'}</span></div>
+    <div class="hw-card-row"><span class="hw-card-row-label">Tested</span><span class="hw-card-row-value" style="color:var(--amber)">Not tested — community only</span></div>
+    <div class="hw-card-row"><span class="hw-card-row-label">Status</span><span class="hw-card-row-value">${amdGpu&&rocmOk?'<span class="hw-status-dot available"></span>Ready':amdGpu?'<span class="hw-status-dot warning"></span>ROCm not installed':'<span class="hw-status-dot unavailable"></span>Not detected'}</span></div>
+    <div class="hw-card-actions">${amdGpu&&!rocmOk?`<div class="install-note warn">ROCm on Windows is experimental. See <a href="https://rocm.docs.amd.com" target="_blank" style="color:var(--blue)">rocm.docs.amd.com</a></div>`:''}${amdGpu&&rocmOk?`<div class="hw-action-row"><button class="btn btn-secondary${state.currentBackend==='rocm'?' btn-primary':''}" onclick="switchBackend('rocm')">${state.currentBackend==='rocm'?'✓ Active Backend':'Set as Backend'}</button></div>`:''}</div>`;
+  grid.appendChild(amdCard);
+
+  container.appendChild(grid);
+  if (hw.warnings?.length > 0) hw.warnings.forEach(w => { const b = document.createElement('div'); b.className = 'warning-box'; b.innerHTML = `⚠ ${esc(w)}`; container.appendChild(b); });
+}
+function refreshHardwareButtons() { if (state.activePanel === 'hardware') renderHardwarePanel(state.hardware); }
+
+async function installCuda() {
+  if (!confirm('Install PyTorch CUDA (~1.8 GB)?\n\nAfter completion run: python -m pip install onnxruntime-gpu\n\nContinue?')) return;
+  const res = await api('POST', '/api/install/cuda');
+  if (!res.ok && res.status === 409) { if (confirm('Install stuck. Reset and retry?')) { await api('POST', '/api/install/reset'); await api('POST', '/api/install/cuda'); } }
+}
+function installOrtGpu() { alert('Run in command prompt:\n\n  python -m pip install onnxruntime-gpu\n\nThen restart Objectif.AI.'); }
+async function installOpenvino() {
+  if (!confirm('Install OpenVINO + onnxruntime-openvino (~200 MB)?\n\nContinue?')) return;
+  const res = await api('POST', '/api/install/openvino');
+  if (!res.ok && res.status === 409) { if (confirm('Install stuck. Reset and retry?')) { await api('POST', '/api/install/reset'); await api('POST', '/api/install/openvino'); } }
+}
+async function switchBackend(backend) {
+  const hasModel = document.getElementById('model-dot').classList.contains('green');
+  if (hasModel) { const name = document.getElementById('model-label').textContent; if (!confirm(`Switch to ${backend.toUpperCase()}?\n\nModel (${name}) will reload on new backend.`)) return; }
+  const res = await api('POST', '/api/backend/switch', {backend});
+  if (!res.ok) { const d = await res.json(); alert(`Switch failed: ${d.detail}`); return; }
+  await fetchStatus();
+  if (state.activePanel === 'hardware') renderHardwarePanel(state.hardware);
+}
+
+// ============================================================
+//  SETTINGS
+// ============================================================
+const THEMES = [
+  // colors: [background, accent1, accent2] — chosen to be visually distinctive per theme
+  {id:'dark',        name:'Dark',        colors:['#0d0d0d','#f0a500','#3ddc84']},  // black, amber, green
+  {id:'light',       name:'Light',       colors:['#ebebeb','#ffffff','#1a1a1a']},  // light grey, white, black
+  {id:'solarized',   name:'Solarized',   colors:['#002b36','#2aa198','#268bd2']},  // dark teal, cyan, blue
+  {id:'dracula',     name:'Dracula',     colors:['#282a36','#bd93f9','#ff79c6']},  // dark purple-grey, purple, pink
+  {id:'nord',        name:'Nord',        colors:['#2e3440','#81a1c1','#88c0d0']},  // blue-grey, steel blue, cyan
+  {id:'gruvbox',     name:'Gruvbox',     colors:['#282828','#fabd2f','#cc241d']},  // warm dark, yellow, red
+  {id:'monokai',     name:'Monokai',     colors:['#272822','#f92672','#a6e22e']},  // dark olive, pink-red, green
+  {id:'ocean',       name:'Ocean',       colors:['#0a1628','#5b9de0','#4ecaa0']},  // deep navy, blue, teal
+  {id:'forest',      name:'Forest',      colors:['#0a1a0a','#4acc70','#c8a840']},  // dark green, bright green, gold
+  {id:'rose',        name:'Rose',        colors:['#1a0d12','#e05888','#e0a860']},  // dark rose, pink, amber
+  {id:'highcontrast',name:'Hi-Contrast', colors:['#000000','#ffcc00','#ffffff']},  // black, yellow, white
+];
+
+function buildThemeGrid() {
+  const grid = document.getElementById('theme-grid');
+  grid.innerHTML = '';
+  THEMES.forEach(t => {
+    const sw = document.createElement('div');
+    sw.className = `theme-swatch${(state.config?.ui?.theme||'dark')===t.id?' active':''}`;
+    sw.dataset.theme = t.id;
+    const [bg, c1, c2] = t.colors;
+    sw.innerHTML = `<div class="theme-swatch-preview" style="background:linear-gradient(135deg,${bg} 55%,${c1} 55%,${c1} 75%,${c2} 75%)"></div><div class="theme-swatch-name">${t.name}</div>`;
+    sw.addEventListener('click', async () => {
+      document.documentElement.dataset.theme = t.id;
+      document.querySelectorAll('.theme-swatch').forEach(s => s.classList.toggle('active', s.dataset.theme === t.id));
+      state.config.ui = state.config.ui || {};
+      state.config.ui.theme = t.id;
+      await api('POST', '/api/config', {'ui.theme': t.id});
+    });
+    grid.appendChild(sw);
+  });
+}
+
+async function loadConfig() {
+  try {
+    const res = await api('GET', '/api/config');
+    const data = await res.json();
+    state.config = data.config;
+    state.cocoGroups = data.coco_classes;
+
+    const conf = Math.round((state.config.detection?.min_confidence||0.3)*100);
+    document.getElementById('conf-slider').value = conf;
+    document.getElementById('conf-value').textContent = `${conf}%`;
+
+    const filterEnabled = state.config.detection?.class_filter_enabled||false;
+    document.getElementById('filter-toggle').checked = filterEnabled;
+    document.getElementById('class-filter-panel').classList.toggle('visible', filterEnabled);
+
+    state.allowedClasses = new Set(state.config.detection?.allowed_classes||[]);
+    document.getElementById('buffer-select').value = String(state.config.console?.buffer_size||1000);
+
+    const infMs = state.config.ui?.inference_update_ms||1000;
+    document.getElementById('inf-update-slider').value = infMs;
+    document.getElementById('inf-update-value').textContent = fmtMs(infMs);
+    state.infUpdateMs = infMs;
+    startInferenceDisplayTimer();
+
+    const expand = state.config.ui?.detection_expand !== false;
+    document.getElementById('expand-toggle').checked = expand;
+    renderExpandPreview(expand);
+
+    const theme = state.config.ui?.theme || 'dark';
+    document.documentElement.dataset.theme = theme;
+    buildThemeGrid();
+
+    renderClassGroups();
+    checkServiceStatus();
+  } catch {}
+}
+
+function fmtMs(ms) { return ms < 1000 ? `${ms} ms` : `${(ms/1000).toFixed(1)} s`; }
+
+function renderExpandPreview(expand) {
+  const el = document.getElementById('expand-preview'); if (!el) return;
+  const exDets = [{label:'person',confidence:.94},{label:'car',confidence:.87},{label:'bicycle',confidence:.53}];
+  const dimC = 'color:var(--text-dim)', timeC = 'color:var(--text-dim);font-size:11px', secC = 'color:var(--text-secondary)';
+  if (expand) {
+    const rows = exDets.map((d,i) => { const pct=Math.round(d.confidence*100); const cc=pct>=80?'var(--green)':pct>=50?'var(--amber)':'var(--red)'; return `<div style="display:flex;padding:${i===exDets.length-1?'0 12px 3px':'0 12px'}"><span style="display:inline-block;width:176px;flex-shrink:0"></span><span style="${dimC};margin-right:6px">·</span><span style="${secC}">${d.label}</span><span style="font-family:var(--font-mono);margin-left:6px;color:${cc}">${pct}%</span></div>`; }).join('');
+    el.innerHTML = `<div style="display:flex;padding:0 12px"><span style="display:inline-block;width:20px;text-align:center;color:var(--shape-0)">●</span><span style="display:inline-block;width:72px;${timeC}">16:55:27</span><span style="display:inline-block;width:72px;font-size:10px;color:var(--log-detection)">OUT</span><span style="color:var(--text-primary)">Detected 3 items — 43.2 ms</span></div>${rows}`;
+  } else {
+    const inline = exDets.map(d=>`${d.label} ${Math.round(d.confidence*100)}%`).join(', ');
+    el.innerHTML = `<div style="display:flex;padding:0 12px"><span style="display:inline-block;width:20px;text-align:center;color:var(--shape-0)">●</span><span style="display:inline-block;width:72px;${timeC}">16:55:27</span><span style="display:inline-block;width:72px;font-size:10px;color:var(--log-detection)">OUT</span><span style="color:var(--text-primary)">Detected: ${inline} — 43.2 ms</span></div>`;
+  }
+}
+
+function renderClassGroups() {
+  const container = document.getElementById('class-groups'); container.innerHTML = '';
+  for (const [group, classes] of Object.entries(state.cocoGroups)) {
+    const allChecked = classes.every(c => state.allowedClasses.has(c));
+    const div = document.createElement('div'); div.className = 'class-group';
+    div.innerHTML = `<div class="class-group-header"><span class="class-group-name">${group}</span><span class="class-group-toggle" data-group="${group}">${allChecked?'deselect all':'select all'}</span></div><div class="class-chips" id="chips-${group}">${classes.map(c=>`<label class="class-chip${state.allowedClasses.has(c)?' checked':''}" data-class="${c}"><input type="checkbox" ${state.allowedClasses.has(c)?'checked':''}><div class="class-chip-dot"></div><span class="class-chip-label">${c}</span></label>`).join('')}</div>`;
+    container.appendChild(div);
+  }
+  container.querySelectorAll('.class-chip').forEach(chip => {
+    chip.addEventListener('click', function() {
+      const cls = this.dataset.class; const cb = this.querySelector('input'); cb.checked = !cb.checked;
+      if (cb.checked) { state.allowedClasses.add(cls); this.classList.add('checked'); } else { state.allowedClasses.delete(cls); this.classList.remove('checked'); }
+      saveClassFilter();
+    });
+  });
+  container.querySelectorAll('.class-group-toggle').forEach(btn => {
+    btn.addEventListener('click', function() {
+      const classes = state.cocoGroups[this.dataset.group]||[]; const allChecked = classes.every(c => state.allowedClasses.has(c));
+      classes.forEach(c => { if (allChecked) state.allowedClasses.delete(c); else state.allowedClasses.add(c); });
+      renderClassGroups(); saveClassFilter();
+    });
+  });
+}
+async function saveClassFilter() { await api('POST', '/api/config', {'detection.allowed_classes': Array.from(state.allowedClasses)}); }
+
+document.getElementById('conf-slider').addEventListener('input', function() { document.getElementById('conf-value').textContent = `${this.value}%`; });
+document.getElementById('conf-slider').addEventListener('change', async function() { await api('POST', '/api/config', {'detection.min_confidence': parseInt(this.value)/100}); });
+document.getElementById('filter-toggle').addEventListener('change', async function() { document.getElementById('class-filter-panel').classList.toggle('visible', this.checked); await api('POST', '/api/config', {'detection.class_filter_enabled': this.checked}); });
+document.getElementById('buffer-select').addEventListener('change', async function() { await api('POST', '/api/config', {'console.buffer_size': parseInt(this.value)}); });
+document.getElementById('inf-update-slider').addEventListener('input', function() { document.getElementById('inf-update-value').textContent = fmtMs(parseInt(this.value)); });
+document.getElementById('inf-update-slider').addEventListener('change', async function() { const ms = parseInt(this.value); state.infUpdateMs = ms; startInferenceDisplayTimer(); await api('POST', '/api/config', {'ui.inference_update_ms': ms}); });
+document.getElementById('expand-toggle').addEventListener('change', async function() { state.config.ui = state.config.ui||{}; state.config.ui.detection_expand = this.checked; renderExpandPreview(this.checked); await api('POST', '/api/config', {'ui.detection_expand': this.checked}); });
+document.getElementById('btn-select-all').addEventListener('click', () => { for (const classes of Object.values(state.cocoGroups)) classes.forEach(c => state.allowedClasses.add(c)); renderClassGroups(); saveClassFilter(); });
+document.getElementById('btn-select-none').addEventListener('click', () => { state.allowedClasses.clear(); renderClassGroups(); saveClassFilter(); });
+
+// ============================================================
+//  SERVER CONTROL
+// ============================================================
+async function checkServiceStatus() {
+  try {
+    const res = await api('GET', '/api/service/status');
+    const data = await res.json();
+    const exists = data.exists;
+    const serviceRow = document.getElementById('service-row');
+    const removeRow = document.getElementById('service-remove-row');
+    const noServiceRow = document.getElementById('no-service-row');
+    if (serviceRow) serviceRow.style.display = exists ? 'flex' : 'none';
+    if (removeRow) removeRow.style.display = exists ? 'flex' : 'none';
+    if (noServiceRow) noServiceRow.style.display = exists ? 'none' : 'flex';
+  } catch {}
+}
+document.getElementById('btn-restart-server')?.addEventListener('click', async function() {
+  if (!confirm('Restart the Objectif.AI server?\n\nIf running as a service it will come back automatically.')) return;
+  this.disabled = true; this.textContent = 'Restarting...';
+  try { await api('POST', '/api/server/restart'); } catch {}
+  setTimeout(() => { this.disabled = false; this.textContent = 'Restart Server'; }, 8000);
+});
+document.getElementById('btn-remove-service')?.addEventListener('click', async function() {
+  if (!confirm("Remove Objectif.AI from Windows startup?\n\nThe server keeps running now but won't start automatically next login.")) return;
+  const res = await api('POST', '/api/service/remove'); const data = await res.json();
+  if (data.success) { document.getElementById('service-row').style.display = 'none'; alert('Startup service removed.'); }
+  else alert(`Failed: ${data.error}`);
+});
+document.getElementById('btn-show-key')?.addEventListener('click', async function() {
+  alert('Your API key is stored in config.yaml in your Objectif.AI folder.\n\nOpen the file in any text editor and look for the auth.api_key line.\n\nKeep this key private — anyone with it can control your server.');
+});
+
+// ============================================================
+//  TABS
+// ============================================================
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.addEventListener('click', function() {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+    this.classList.add('active');
+    document.getElementById(`panel-${this.dataset.panel}`).classList.add('active');
+    state.activePanel = this.dataset.panel;
+    if (this.dataset.panel === 'models') loadModels();
+    if (this.dataset.panel === 'settings') loadConfig();
+    if (this.dataset.panel === 'hardware') loadHardware();
+    if (this.dataset.panel === 'deps') loadDependencies();
+  });
+});
+
+// ============================================================
+//  DEPENDENCIES TAB
+// ============================================================
+async function loadDependencies() {
+  document.getElementById('deps-loading').style.display = 'block';
+  document.getElementById('deps-groups').innerHTML = '';
+  document.getElementById('deps-python-row').style.display = 'none';
+  try {
+    const res = await api('GET', '/api/dependencies');
+    if (!res.ok) return;
+    renderDependencies(await res.json());
+  } catch (e) {
+    document.getElementById('deps-loading').textContent = `Error: ${e.message}`;
+  }
+}
+function renderDependencies(data) {
+  document.getElementById('deps-loading').style.display = 'none';
+  const py = data.python;
+  const pyRow = document.getElementById('deps-python-row');
+  document.getElementById('deps-python-ver').textContent = `Python ${py.version}`;
+  const pyStatus = document.getElementById('deps-python-status');
+  pyStatus.className = `dep-status-label ${py.ok ? 'ok' : 'missing'}`;
+  pyStatus.textContent = py.ok ? 'OK' : 'Python 3.10+ required';
+  pyRow.style.display = 'flex';
+  const groups = {}, groupOrder = [];
+  for (const dep of data.dependencies) {
+    if (!groups[dep.category]) { groups[dep.category] = []; groupOrder.push(dep.category); }
+    groups[dep.category].push(dep);
+  }
+  const container = document.getElementById('deps-groups');
+  container.innerHTML = '';
+  for (const cat of groupOrder) {
+    const title = document.createElement('div');
+    title.className = 'dep-group-title';
+    const missing = groups[cat].filter(d => d.status === 'missing').length;
+    title.innerHTML = `${esc(cat)} <span style="color:var(--text-dim);font-weight:normal;text-transform:none;letter-spacing:0">${groups[cat].length - missing}/${groups[cat].length} ready</span>`;
+    container.appendChild(title);
+    for (const dep of groups[cat]) container.appendChild(buildDepCard(dep));
+  }
+}
+function buildDepCard(dep) {
+  const card = document.createElement('div');
+  card.className = 'dep-card'; card.id = `dep-card-${dep.id}`;
+  const reqBadge = dep.required ? `<span class="dep-required-badge">Required</span>` : '';
+  const ver = dep.version && dep.version !== 'installed' ? `<span class="dep-version">${esc(dep.version)}</span>` : '';
+  const badge = `<span class="dep-status-label ${dep.status}">${esc(dep.status_label)}</span>`;
+  let action = '';
+  if (dep.status !== 'ok' && dep.install_cmd && !dep.manual_note) {
+    const sz = dep.size_mb > 100 ? `<span style="font-size:10px;color:var(--text-dim)">~${dep.size_mb >= 1000 ? (dep.size_mb/1000).toFixed(1)+'GB' : dep.size_mb+'MB'}</span>` : '';
+    action = `<button class="btn btn-primary" style="padding:3px 10px;font-size:11px" onclick="installDep('${dep.id}','${esc(dep.name)}')">Install</button>${sz}`;
+  } else if (dep.manual_note && dep.status !== 'ok') {
+    action = `<span class="dep-manual-note">⚠ ${esc(dep.manual_note)}</span>`;
+  }
+  card.innerHTML = `<div class="dep-status-dot ${dep.status}"></div><div class="dep-name">${esc(dep.name)}${reqBadge ? ' '+reqBadge : ''}</div><div class="dep-desc">${esc(dep.description)}</div>${ver}${badge}<div id="dep-action-${dep.id}" style="display:flex;align-items:center;gap:8px;flex-shrink:0">${action}</div>`;
+  return card;
+}
+async function installDep(depId, label) {
+  const ad = document.getElementById(`dep-action-${depId}`);
+  if (ad) ad.innerHTML = '<span style="font-size:11px;color:var(--amber)">Installing...</span>';
+  const res = await api('POST', `/api/dependencies/install/${depId}`);
+  if (!res.ok) {
+    const d = await res.json().catch(() => ({}));
+    if (res.status === 409) {
+      if (confirm('Another install is running. Reset and retry?')) {
+        await api('POST', '/api/install/reset');
+        await api('POST', `/api/dependencies/install/${depId}`);
+      }
+    } else {
+      alert(`Install failed: ${d.detail || res.statusText}`);
+      if (ad) ad.innerHTML = `<button class="btn btn-primary" style="padding:3px 10px;font-size:11px" onclick="installDep('${depId}','${label}')">Retry</button>`;
+    }
+    return;
+  }
+  document.querySelector('[data-panel="hardware"]').click();
+  const poll = setInterval(async () => {
+    const s = await api('GET', '/api/install/status').then(r => r.json()).catch(() => null);
+    if (s && !s.install_running) { clearInterval(poll); setTimeout(() => document.querySelector('[data-panel="deps"]').click(), 1000); }
+  }, 2000);
+}
+
+// ============================================================
+//  START
+// ============================================================
+init();
+</script>
+</body>
+</html>
+
