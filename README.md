@@ -38,6 +38,12 @@ LAN-only by design. **Do not expose port 32168 to the internet.** Built-in mitig
 
 ---
 
+## Development Notes
+
+This project was built collaboratively with AI (Anthropic's Claude). The code and documentation were AI-generated; I directed the design and tested against real BlueIris deployments.
+
+---
+
 ## License
 
 **[AGPL-3.0](LICENSE)** — uses Ultralytics YOLO, which is also AGPL-3.0. Any redistribution must include source code. Commercial use requires an [Ultralytics Enterprise License](https://ultralytics.com/license).
