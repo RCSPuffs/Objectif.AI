@@ -433,6 +433,12 @@ class InferenceEngine:
             if self._engine_type == "ultralytics":
                 return self._detect_ultralytics(image_bytes)
             elif self._engine_type in ("onnx", "onnx_legacy"):
+                # Legacy-exported YOLO and generic YOLO ONNX use the YOLO parser.
+                # MobileNet SSD / EfficientDet have their own output layouts.
+                info = self._model_info
+                if self._engine_type == "onnx" and info is not None and \
+                        info.family in ("MobileNet", "EfficientDet"):
+                    return self._detect_onnx(image_bytes)
                 return self._detect_onnx_yolo(image_bytes)
             elif self._engine_type == "torchhub":
                 return self._detect_torchhub(image_bytes)
@@ -851,6 +857,15 @@ def _auto_device(info: ModelInfo) -> str:
         except ImportError:
             pass
 
+    # Try DirectML (Windows, any DX12 GPU) — only useful for ONNX-engine models
+    if "directml" in preferred and info.engine == "onnx":
+        try:
+            import onnxruntime as ort
+            if "DmlExecutionProvider" in ort.get_available_providers():
+                return "directml"
+        except Exception:
+            pass
+
     # Try OpenVINO
     if "openvino" in preferred:
         try:
@@ -867,9 +882,10 @@ def _auto_device(info: ModelInfo) -> str:
 def _device_to_ultralytics(device: str) -> str:
     """Map our device names to ultralytics predict() device parameter."""
     mapping = {
-        "cuda": "0",       # first CUDA device
+        "cuda": "0",        # first CUDA device
         "cpu": "cpu",
         "openvino": "cpu",  # ultralytics handles openvino via export; we use CPU path
+        "directml": "cpu",  # ultralytics .pt has no DML path; ONNX models use DML directly
         "rocm": "0",
     }
     return mapping.get(device, "cpu")
@@ -877,28 +893,185 @@ def _device_to_ultralytics(device: str) -> str:
 
 def _onnx_providers(backend: str) -> list:
     """Return ONNX Runtime execution providers list."""
+    try:
+        import onnxruntime as ort
+        available = ort.get_available_providers()
+    except Exception:
+        return ["CPUExecutionProvider"]
+
     if backend in ("cuda", "auto"):
-        try:
-            import onnxruntime as ort
-            available = ort.get_available_providers()
-            if "CUDAExecutionProvider" in available:
-                return ["CUDAExecutionProvider", "CPUExecutionProvider"]
-        except Exception:
-            pass
+        if "CUDAExecutionProvider" in available:
+            return ["CUDAExecutionProvider", "CPUExecutionProvider"]
+
+    if backend in ("directml", "auto"):
+        # DmlExecutionProvider ships with the onnxruntime-directml package and
+        # runs on any DirectX 12 GPU (NVIDIA, AMD, Intel) on Windows.
+        if "DmlExecutionProvider" in available:
+            return ["DmlExecutionProvider", "CPUExecutionProvider"]
 
     if backend == "openvino":
-        try:
-            import onnxruntime as ort
-            available = ort.get_available_providers()
-            if "OpenVINOExecutionProvider" in available:
-                return ["OpenVINOExecutionProvider", "CPUExecutionProvider"]
-        except Exception:
-            pass
+        if "OpenVINOExecutionProvider" in available:
+            return ["OpenVINOExecutionProvider", "CPUExecutionProvider"]
 
     return ["CPUExecutionProvider"]
+
+
+# ---------------------------------------------------------------------------
+# ALPR engine (license plate detection + OCR via fast-alpr)
+# ---------------------------------------------------------------------------
+
+class ALPRResult:
+    """One recognized plate: text, overall confidence, and bounding box."""
+
+    def __init__(self, plate: str, confidence: float,
+                 x_min: float, y_min: float, x_max: float, y_max: float):
+        self.plate = plate
+        self.confidence = confidence
+        self.x_min = x_min
+        self.y_min = y_min
+        self.x_max = x_max
+        self.y_max = y_max
+
+
+class ALPREngine:
+    """
+    Wraps the fast-alpr pipeline (plate detection + OCR).
+
+    fast-alpr downloads its ONNX weights from Hugging Face on first load and
+    caches them under the user's HF cache, mirroring how the YOLOv5 (torch.hub)
+    and torchvision paths already self-manage their weights. Kept separate from
+    InferenceEngine so the two can be loaded independently — BlueIris hits ALPR
+    on its own endpoint and may run it alongside object detection.
+    """
+
+    def __init__(self):
+        self._alpr = None
+        self._lock = threading.Lock()
+        self._loading = False
+        self._load_error: Optional[str] = None
+        self._detector_model: Optional[str] = None
+        self._ocr_model: Optional[str] = None
+        self.log_callback = None
+
+    @property
+    def is_loaded(self) -> bool:
+        return self._alpr is not None
+
+    @property
+    def is_loading(self) -> bool:
+        return self._loading
+
+    @property
+    def load_error(self) -> Optional[str]:
+        return self._load_error
+
+    @property
+    def active_models(self) -> dict:
+        return {"detector": self._detector_model, "ocr": self._ocr_model}
+
+    def _log(self, msg: str):
+        logger.info(msg)
+        if self.log_callback:
+            try:
+                self.log_callback(msg)
+            except Exception:
+                pass
+
+    def load(self, detector_model: str, ocr_model: str) -> bool:
+        """
+        Load (or reload) the ALPR pipeline. First call may download weights.
+        Returns True on success.
+        """
+        self._loading = True
+        self._load_error = None
+        try:
+            try:
+                from fast_alpr import ALPR
+            except ImportError:
+                self._load_error = (
+                    "fast-alpr not installed. Install it from the Dependencies tab "
+                    "or run: pip install fast-alpr onnxruntime"
+                )
+                logger.error(self._load_error)
+                return False
+
+            self._log(
+                f"Loading ALPR pipeline (detector={detector_model}, ocr={ocr_model}). "
+                f"First load downloads model weights — this may take a moment..."
+            )
+            alpr = ALPR(detector_model=detector_model, ocr_model=ocr_model)
+            with self._lock:
+                self._alpr = alpr
+                self._detector_model = detector_model
+                self._ocr_model = ocr_model
+            self._log("ALPR pipeline ready.")
+            return True
+        except Exception as e:
+            self._load_error = str(e)
+            logger.exception(f"Failed to load ALPR pipeline: {e}")
+            return False
+        finally:
+            self._loading = False
+
+    def unload(self):
+        with self._lock:
+            self._alpr = None
+            self._detector_model = None
+            self._ocr_model = None
+            self._load_error = None
+        logger.info("ALPR pipeline unloaded")
+
+    def recognize(self, image_bytes: bytes) -> tuple:
+        """
+        Run ALPR on raw image bytes.
+        Returns (list[ALPRResult], inference_ms). Empty list if nothing found.
+        """
+        if not self.is_loaded:
+            return [], 0.0
+
+        import numpy as np
+        import cv2
+
+        nparr = np.frombuffer(image_bytes, np.uint8)
+        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        if img is None:
+            raise ValueError("Could not decode image")
+
+        with self._lock:
+            t0 = time.perf_counter()
+            raw = self._alpr.predict(img)
+            inference_ms = (time.perf_counter() - t0) * 1000
+
+        results = []
+        for r in raw:
+            # fast-alpr returns objects with .detection (bbox + conf) and
+            # .ocr (text + conf). Guard each field — OCR can be None if the
+            # plate was detected but unreadable.
+            try:
+                det = getattr(r, "detection", None)
+                ocr = getattr(r, "ocr", None)
+                if det is None or ocr is None or not getattr(ocr, "text", None):
+                    continue
+                bbox = det.bounding_box
+                det_conf = float(getattr(det, "confidence", 1.0) or 1.0)
+                ocr_conf = float(getattr(ocr, "confidence", 1.0) or 1.0)
+                results.append(ALPRResult(
+                    plate=str(ocr.text).strip().upper(),
+                    confidence=det_conf * ocr_conf,
+                    x_min=float(bbox.x1),
+                    y_min=float(bbox.y1),
+                    x_max=float(bbox.x2),
+                    y_max=float(bbox.y2),
+                ))
+            except Exception as e:
+                logger.warning(f"Skipping malformed ALPR result: {e}")
+                continue
+
+        return results, inference_ms
 
 
 # ---------------------------------------------------------------------------
 # Module-level singleton
 # ---------------------------------------------------------------------------
 engine = InferenceEngine()
+alpr_engine = ALPREngine()

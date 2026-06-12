@@ -68,10 +68,16 @@ DEFAULT_CONFIG = {
     },
     "detection": {
         "active_model": None,           # model id string or null
-        "backend": "auto",              # auto, cpu, cuda, openvino, rocm
+        "backend": "auto",              # auto, cpu, cuda, directml, openvino, rocm
         "min_confidence": 0.30,         # global minimum confidence threshold
         "class_filter_enabled": False,  # if False, return all classes
         "allowed_classes": ALL_COCO_CLASSES,  # used when filter is enabled
+    },
+    "alpr": {
+        "active": False,                # whether the ALPR pipeline auto-loads on startup
+        "min_confidence": 0.30,         # minimum plate-text confidence returned
+        "detector_model": "yolo-v9-t-384-license-plate-end2end",
+        "ocr_model": "cct-xs-v2-global-model",
     },
     "console": {
         "buffer_size": 1000,            # lines to keep in memory
@@ -154,6 +160,7 @@ API_UPDATABLE_PATHS: set = {
     "detection.backend",
     "detection.class_filter_enabled",
     "detection.allowed_classes",
+    "alpr.min_confidence",
     "console.buffer_size",
     "ui.theme",
     "ui.inference_update_ms",
@@ -170,11 +177,13 @@ _VALIDATORS = {
     "detection.active_model":
         lambda v: v is None or (isinstance(v, str) and 0 < len(v) <= 100),
     "detection.backend":
-        lambda v: v in ("auto", "cpu", "cuda", "openvino", "rocm"),
+        lambda v: v in ("auto", "cpu", "cuda", "directml", "openvino", "rocm"),
     "detection.class_filter_enabled":
         lambda v: isinstance(v, bool),
     "detection.allowed_classes":
         lambda v: isinstance(v, list) and all(isinstance(x, str) for x in v) and len(v) <= 500,
+    "alpr.min_confidence":
+        lambda v: isinstance(v, (int, float)) and not isinstance(v, bool) and 0.0 <= float(v) <= 1.0,
     "console.buffer_size":
         lambda v: isinstance(v, int) and not isinstance(v, bool) and 100 <= v <= 100_000,
     "ui.theme":

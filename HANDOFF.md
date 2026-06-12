@@ -3,7 +3,7 @@
 Read this before making any changes. It explains architecture decisions, recurring
 bugs, known quirks, and why things are done the way they are.
 
-**Current version:** v0.7.8
+**Current version:** v0.7.9
 **Working directory convention:** all source in one flat folder + `static/` subfolder.
 
 ---
@@ -12,27 +12,29 @@ bugs, known quirks, and why things are done the way they are.
 
 A Python/FastAPI server that replaces CodeProject.AI for BlueIris NVR. BlueIris
 POSTs camera images to `/v1/vision/detection` and expects JSON bounding box
-detections back. Everything else (dashboard, model management, GPU setup) is
-layered on top of that core contract.
+detections back. As of v0.7.9 it also serves license-plate recognition on
+`/v1/vision/alpr`. Everything else (dashboard, model management, GPU setup) is
+layered on top of those core contracts.
 
 **The BlueIris API contract is sacred.** `/v1/vision/detection` must always accept
-multipart/form-data and return the exact CodeProject.AI JSON format. BlueIris
-users point at this server with zero reconfiguration. Never break this endpoint.
+multipart/form-data and return the exact CodeProject.AI JSON format. The same
+applies to `/v1/vision/alpr`. BlueIris users point at this server with zero
+reconfiguration. Never break these endpoints.
 
 ---
 
 ## File Structure
 
 ```
-main.py            FastAPI app, all HTTP + WebSocket endpoints
+main.py            FastAPI app, all HTTP + WebSocket endpoints (incl. /v1/vision/alpr + /api/alpr/*)
 auth.py            API key generation and verification
-config.py          YAML config read/write, in-memory singleton
-detector.py        Inference engine (ultralytics, torchvision, onnx; torchhub retained but unused)
+config.py          YAML config read/write, in-memory singleton (incl. alpr.* block)
+detector.py        Object-detection engine + separate ALPREngine (fast-alpr) singleton
 downloader.py      Model file download manager with WebSocket progress streaming
-hardware.py        Hardware detection (CUDA, OpenVINO, ROCm, CC detection)
+hardware.py        Hardware detection (CUDA, OpenVINO, ROCm, DirectML, CC detection)
 console_buffer.py  Circular in-memory log buffer, WebSocket broadcast
 model_registry.py  Model catalog — names, URLs, metadata, engine types
-dependencies.py    Package checker for the Dependencies tab
+dependencies.py    Package checker for the Dependencies tab (incl. fast-alpr, onnxruntime-directml)
 _write_task_xml.py Helper called by setup-service.bat — generates start-silent.vbs
                    (with full python.exe path) and writes Task Scheduler XML UTF-16.
 _stop_server.py    Helper called by remove-service.bat — finds and kills the running
@@ -186,6 +188,68 @@ CUDA. They fall back to CPU with a console warning.
 
 **Intel:** OpenVINO + onnxruntime-openvino
 **AMD:** ROCm — experimental, not tested by dev team
+**DirectML (v0.7.9):** see below
+
+---
+
+## v0.7.9 — DirectML, ALPR, and ONNX routing fix
+
+### DirectML backend
+`onnxruntime-directml` exposes `DmlExecutionProvider`, which runs ONNX models on
+any DirectX 12 GPU (NVIDIA, AMD, Intel) on Windows. Wired through:
+- `detector.py`: `_onnx_providers()` adds `DmlExecutionProvider`; `_auto_device()`
+  returns `"directml"` only for `engine == "onnx"` models (it has no effect on
+  PyTorch `.pt` / torchvision paths, so `_device_to_ultralytics()` maps it to CPU);
+- `config.py`: `directml` added to the `detection.backend` validator;
+- `main.py`: `/api/install/directml` endpoint and `directml` allowed in
+  `/api/backend/switch`; install-status reports `onnxruntime_directml`;
+- `hardware.py`: `_detect_directml()` + DirectML in the backend list and dict;
+- `dependencies.py`: `onnxruntime_directml` catalog entry + provider check;
+- `static/index.html`: DirectML hardware card + `installDirectml()`.
+
+**Critical gotcha — ONNX Runtime builds are mutually exclusive.** `onnxruntime`,
+`onnxruntime-gpu`, `onnxruntime-openvino`, and `onnxruntime-directml` all install
+as the same import name (`onnxruntime`) and cannot coexist. The DirectML install
+chain therefore runs an **uninstall step first**. This is why `_run_install_chain()`
+was extended to recognise a `["--uninstall", ...]` sentinel as the first list
+element (runs `pip uninstall -y` and tolerates a non-zero return code). Don't
+"clean that up" — it's load-bearing.
+
+### ALPR (license plate recognition)
+Uses the MIT-licensed `fast-alpr` package (plate detector from `open-image-models`
++ OCR from `fast-plate-ocr`). Architecture:
+- **Separate engine.** `ALPREngine` in `detector.py` is its own singleton
+  (`alpr_engine`), independent of the object-detection `InferenceEngine`, so both
+  can be loaded at once. It has its own lock.
+- **Self-managing weights.** `fast-alpr` downloads ONNX weights from Hugging Face
+  on first `ALPR(...)` construction and caches them in the HF cache — same
+  "lazy download" posture as the torchhub/torchvision paths. We deliberately do
+  NOT host these or route them through `downloader.py` / `model_registry.py`.
+  If HF is down, first load fails; cached weights keep working.
+- **Separate endpoint.** `/v1/vision/alpr` (CPAI-ALPR-compatible: predictions with
+  `label`/`plate`, confidence, bbox). Unauthenticated + rate-limited like detection.
+- **Config.** `alpr.*` block: `active` (auto-load on startup), `min_confidence`,
+  `detector_model`, `ocr_model`. Only `alpr.min_confidence` is in
+  `API_UPDATABLE_PATHS`; the model choices are set via `/api/alpr/load`, not the
+  generic config endpoint.
+- **Dashboard.** Controls live in Settings → License Plate Recognition (not a new
+  tab). `/api/alpr/status|load|unload` drive it.
+
+**UNVERIFIED — check before trusting.** `ALPREngine.recognize()` reads fast-alpr's
+result objects as `r.detection.bounding_box.x1/.y1/.x2/.y2`, `r.detection.confidence`,
+and `r.ocr.text/.confidence`. This was written from the library's docs, NOT tested
+against the installed package. If ALPR returns empty or errors on the attribute
+access, this is the first place to look — adjust to match the actual fast-alpr
+result dataclass.
+
+### ONNX output routing fix
+`InferenceEngine.detect()` previously routed every `onnx` engine to
+`_detect_onnx_yolo()`, leaving `_detect_onnx()` (the MobileNet SSD / EfficientDet
+parser) as dead code. Detection now dispatches `engine == "onnx"` models whose
+`family` is `MobileNet` or `EfficientDet` to `_detect_onnx()`, and everything else
+(legacy-exported YOLO, generic YOLO ONNX) to `_detect_onnx_yolo()`. Note those
+ONNX families still have empty `download_url` (manual install only), so this path
+is only exercised if a user manually drops an `.onnx` in `models/`.
 
 ---
 
@@ -307,9 +371,23 @@ followed by `</script></body></html>`.
 
 ## License
 
-AGPL-3.0 due to Ultralytics. If commercialisation is ever wanted:
+AGPL-3.0 due to Ultralytics. The optional ALPR pipeline (`fast-alpr` and its
+plate/OCR models) is MIT — it does not change the project's AGPL status, but its
+weights are third-party downloads (document this if redistributing). If
+commercialisation is ever wanted:
 - Purchase an Ultralytics Enterprise License (current pricing on their site), OR
-- Remove Ultralytics entirely (torchvision models would survive; YOLOv5 models would not, as their `.pt` files are also loaded via the Ultralytics engine)
+- Remove Ultralytics entirely (torchvision and the fast-alpr/ONNX paths would survive; YOLO `.pt` models would not, as they load via the Ultralytics engine)
+
+**Trademark (separate from the code license):** "Objectif.AI" is claimed as a
+common-law (unregistered) trademark — ™, not ®. The ® symbol must NOT be used
+anywhere unless/until a registration is actually granted (using ® pre-registration
+is itself a violation). Notices live in `README.md` (Trademark section) and the
+dashboard Help → Trademark. The notices currently name **RCSPuffs** as owner —
+this is fine for an unregistered claim, but note a GitHub handle cannot be the
+owner on an actual registration; the maintainer plans to file under their legal
+name (or a registered company) if/when registering, at which point update the
+notices to match. The AGPL grants rights to the source, NOT to the Objectif.AI
+name or logo as third-party branding.
 
 ---
 
@@ -329,8 +407,14 @@ For GPU: see README GPU Setup section.
 
 ## What's Next (v0.8+)
 
+- **Test ALPR against the real `fast-alpr` package** — the result-object attribute
+  access in `ALPREngine.recognize()` is unverified (see v0.7.9 section).
+- **Custom model slot** — drag-drop a user model + pick engine + class list. Deferred
+  intentionally; scope it to Ultralytics `.pt`/`.onnx` and the generic `[N,6]` ONNX
+  layout first, since arbitrary ONNX output shapes need per-model parser code.
 - SHA-256 hash verification for downloaded model files (field exists, needs values)
-- Legacy GPU broader testing (legacy CC < 7.5 path is unverified on real hardware — tested indirectly)
+- Legacy GPU broader testing (legacy CC < 7.5 path is unverified on real hardware)
+- DirectML real-hardware testing on AMD/Intel GPUs (wired but not yet tested end-to-end)
 - Possibly: single .exe installer for non-technical users
 - Possibly: per-detection webhook notifications (Discord, Pushover, etc.)
 - Possibly: detection history / statistics tab

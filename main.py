@@ -40,7 +40,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 # Local modules
 from config import get_config, update_config, get_value, get_coco_classes_grouped, get_all_coco_classes
 from console_buffer import console
-from detector import engine, MODELS_DIR
+from detector import engine, alpr_engine, MODELS_DIR
 from downloader import download_manager
 from hardware import detect_hardware, hardware_info_to_dict
 from model_registry import get_all_models, get_model, model_to_dict
@@ -280,17 +280,27 @@ def _broadcast_install(msg: dict):
 
 def _run_install_chain(steps: list):
     """
-    Run a chain of pip installs sequentially in a background thread.
+    Run a chain of pip operations sequentially in a background thread.
     steps = [(packages_list, label_str), ...]
-    Stops the chain if any step fails.
+
+    A step whose packages_list begins with the sentinel "--uninstall" is run as
+    `pip uninstall -y <rest>` and a non-zero return code is tolerated (the
+    packages may simply not be installed). All other steps run as
+    `pip install <packages>` and stop the chain on failure.
     """
     global _active_install, _install_start_time
 
     total = len(steps)
     for step_idx, (packages, label) in enumerate(steps):
         step_label = f"{label} ({step_idx+1}/{total})" if total > 1 else label
-        cmd = [sys.executable, "-m", "pip", "install"] + packages
-        console.system(f"Installing: {step_label}")
+
+        is_uninstall = bool(packages) and packages[0] == "--uninstall"
+        if is_uninstall:
+            cmd = [sys.executable, "-m", "pip", "uninstall", "-y"] + packages[1:]
+        else:
+            cmd = [sys.executable, "-m", "pip", "install"] + packages
+
+        console.system(f"{'Uninstalling' if is_uninstall else 'Installing'}: {step_label}")
         _broadcast_install({
             "status": "start",
             "label": step_label,
@@ -313,7 +323,8 @@ def _run_install_chain(steps: list):
                 if line:
                     _broadcast_install({"status": "line", "text": line})
             proc.wait()
-            success = proc.returncode == 0
+            # Uninstall steps are best-effort: not-installed -> non-zero is fine.
+            success = proc.returncode == 0 or is_uninstall
             _broadcast_install({
                 "status": "step_done",
                 "label": step_label,
@@ -383,10 +394,10 @@ async def lifespan(app: FastAPI):
     port = cfg["server"]["port"]
 
     _startup_log("=" * 50)
-    _startup_log("Objectif.AI v0.7.8 starting up")
+    _startup_log("Objectif.AI v0.7.9 starting up")
 
     console.system("=" * 55)
-    console.system("  Objectif.AI v0.7.8 starting up...")
+    console.system("  Objectif.AI v0.7.9 starting up...")
     console.system("=" * 55)
 
     # Hardware detection
@@ -450,6 +461,15 @@ async def lifespan(app: FastAPI):
 
     # Wire console log callback to inference engine for legacy GPU messages
     engine.log_callback = console.system
+    alpr_engine.log_callback = console.system
+
+    # Restore the ALPR pipeline if it was active in a previous session.
+    if get_value("alpr.active"):
+        det_m = get_value("alpr.detector_model")
+        ocr_m = get_value("alpr.ocr_model")
+        console.system("Restoring ALPR pipeline from previous session...")
+        if not alpr_engine.load(det_m, ocr_m):
+            console.warning(f"ALPR restore failed: {alpr_engine.load_error}")
 
     console.system(f"Server listening on http://0.0.0.0:{port}")
     console.system("Ready.")
@@ -471,7 +491,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Objectif.AI",
     description="Drop-in replacement for CodeProject.AI — BlueIris compatible",
-    version="0.7.8",
+    version="0.7.9",
     lifespan=lifespan,
 )
 
@@ -572,12 +592,98 @@ async def detect_objects(
             "predictions": [], "count": 0, "inferenceMs": 0, "code": 500})
 
 
+@app.post("/v1/vision/alpr")
+async def detect_alpr(
+    request: Request,
+    image: UploadFile = File(...),
+    min_confidence: Optional[float] = Form(None),
+):
+    """
+    License plate recognition endpoint — CodeProject.AI ALPR compatible.
+
+    BlueIris posts an image here (configured as a separate AI server entry with
+    path /v1/vision/alpr) and receives recognized plate strings with bounding
+    boxes. Unauthenticated like /v1/vision/detection, so the same per-IP rate
+    limit applies.
+    """
+    client_ip = request.client.host if request.client else "unknown"
+    if not _rate_limit_check(client_ip):
+        return JSONResponse(
+            {"success": False, "error": "Rate limit exceeded — slow down",
+             "predictions": [], "count": 0, "inferenceMs": 0, "code": 429},
+            status_code=429,
+        )
+
+    image_bytes = await image.read()
+    if len(image_bytes) > 20 * 1024 * 1024:
+        return JSONResponse({"success": False, "error": "Image too large (20 MB max)",
+            "predictions": [], "count": 0, "inferenceMs": 0, "code": 413}, status_code=413)
+
+    size_kb = len(image_bytes) / 1024
+    shape_idx = console.request_received(size_kb)
+
+    if not alpr_engine.is_loaded:
+        console.no_model()
+        return JSONResponse({"success": False, "error": "ALPR not loaded",
+            "predictions": [], "count": 0, "inferenceMs": 0, "code": 500})
+
+    cfg = get_config()
+    alpr_cfg = cfg.get("alpr", {})
+    threshold = min_confidence if min_confidence is not None else alpr_cfg.get("min_confidence", 0.30)
+    threshold = max(0.0, min(1.0, float(threshold)))
+
+    try:
+        results, inference_ms = alpr_engine.recognize(image_bytes)
+
+        predictions = []
+        for r in results:
+            if r.confidence < threshold:
+                continue
+            predictions.append({
+                "label": r.plate,
+                "plate": r.plate,
+                "confidence": round(r.confidence, 4),
+                "x_min": int(r.x_min),
+                "y_min": int(r.y_min),
+                "x_max": int(r.x_max),
+                "y_max": int(r.y_max),
+            })
+
+        response = {
+            "success": True,
+            "predictions": predictions,
+            "count": len(predictions),
+            "inferenceMs": round(inference_ms, 1),
+            "processMs": round(inference_ms, 1),
+            "moduleId": "ObjectifALPR",
+            "moduleName": "Objectif.AI ALPR",
+            "code": 200,
+            "command": "alpr",
+            "requestId": "",
+        }
+
+        console.detection_result(
+            shape_idx=shape_idx,
+            detections=predictions,
+            inference_ms=inference_ms,
+        )
+        _record_inference(inference_ms)
+        return JSONResponse(response)
+
+    except Exception as e:
+        logger.exception(f"ALPR error: {e}")
+        console.error(f"ALPR error: {e}")
+        return JSONResponse({"success": False,
+            "error": "ALPR failed — check server logs",
+            "predictions": [], "count": 0, "inferenceMs": 0, "code": 500})
+
+
 @app.get("/v1/status")
 async def status():
     """CPAI-compatible status endpoint."""
     return {
         "status": "OK",
-        "version": "0.7.8",
+        "version": "0.7.9",
         "platform": "Windows",
         "systemInfo": {
             "model": engine.model_info.name if engine.model_info else "None",
@@ -832,7 +938,7 @@ async def api_service_remove(api_key: str = Depends(verify_api_key)):
 async def api_switch_backend(body: dict, api_key: str = Depends(verify_api_key)):
     """Switch compute backend and reload active model if one is loaded."""
     backend = body.get("backend")
-    if backend not in ("auto", "cpu", "cuda", "openvino", "rocm"):
+    if backend not in ("auto", "cpu", "cuda", "directml", "openvino", "rocm"):
         raise HTTPException(status_code=400, detail=f"Unknown backend: {backend}")
 
     prev_model_id = engine.model_info.id if engine.model_info else None
@@ -853,6 +959,81 @@ async def api_switch_backend(body: dict, api_key: str = Depends(verify_api_key))
     else:
         console.system(f"Backend set to {backend.upper()} (no model loaded)")
         return {"success": True, "reloaded": False}
+
+
+# ---------------------------------------------------------------------------
+# ALPR MANAGEMENT
+# ---------------------------------------------------------------------------
+
+# Available fast-alpr model choices surfaced in the dashboard. Detector sizes
+# trade speed for accuracy (256 fastest, 608 most accurate).
+ALPR_DETECTOR_MODELS = [
+    "yolo-v9-t-256-license-plate-end2end",
+    "yolo-v9-t-384-license-plate-end2end",
+    "yolo-v9-t-512-license-plate-end2end",
+    "yolo-v9-t-640-license-plate-end2end",
+    "yolo-v9-s-608-license-plate-end2end",
+]
+ALPR_OCR_MODELS = [
+    "cct-xs-v2-global-model",
+    "cct-s-v1-global-model",
+    "global-plates-mobile-vit-v2-model",
+]
+
+
+@app.get("/api/alpr/status")
+async def api_alpr_status(api_key: str = Depends(verify_api_key)):
+    """ALPR pipeline status for the dashboard."""
+    # fast-alpr availability — drives whether the UI shows an install prompt.
+    try:
+        import fast_alpr  # noqa: F401
+        installed = True
+    except ImportError:
+        installed = False
+
+    return {
+        "installed": installed,
+        "loaded": alpr_engine.is_loaded,
+        "loading": alpr_engine.is_loading,
+        "error": alpr_engine.load_error,
+        "active": bool(get_value("alpr.active")),
+        "models": alpr_engine.active_models,
+        "min_confidence": get_value("alpr.min_confidence", 0.30),
+        "available_detectors": ALPR_DETECTOR_MODELS,
+        "available_ocr": ALPR_OCR_MODELS,
+    }
+
+
+@app.post("/api/alpr/load")
+async def api_alpr_load(body: dict, api_key: str = Depends(verify_api_key)):
+    """Load (or reload) the ALPR pipeline. First load downloads weights."""
+    detector = body.get("detector_model") or get_value("alpr.detector_model")
+    ocr = body.get("ocr_model") or get_value("alpr.ocr_model")
+
+    if detector not in ALPR_DETECTOR_MODELS:
+        raise HTTPException(status_code=400, detail=f"Unknown detector model: {detector}")
+    if ocr not in ALPR_OCR_MODELS:
+        raise HTTPException(status_code=400, detail=f"Unknown OCR model: {ocr}")
+
+    loop = asyncio.get_event_loop()
+    ok = await loop.run_in_executor(None, alpr_engine.load, detector, ocr)
+    if not ok:
+        raise HTTPException(status_code=500, detail=alpr_engine.load_error or "ALPR load failed")
+
+    update_config("alpr.detector_model", detector)
+    update_config("alpr.ocr_model", ocr)
+    update_config("alpr.active", True)
+    console.success(f"ALPR ready: {detector} + {ocr}")
+    return {"success": True, "models": alpr_engine.active_models}
+
+
+@app.post("/api/alpr/unload")
+async def api_alpr_unload(api_key: str = Depends(verify_api_key)):
+    """Unload the ALPR pipeline and stop auto-loading it on startup."""
+    alpr_engine.unload()
+    update_config("alpr.active", False)
+    console.system("ALPR pipeline unloaded")
+    return {"success": True}
 
 
 # ---------------------------------------------------------------------------
@@ -891,10 +1072,12 @@ async def api_install_status(api_key: str = Depends(verify_api_key)):
         pass
 
     onnxruntime_gpu = False
+    onnxruntime_directml = False
     try:
         import onnxruntime as ort
         providers = ort.get_available_providers()
         onnxruntime_gpu = "CUDAExecutionProvider" in providers
+        onnxruntime_directml = "DmlExecutionProvider" in providers
     except ImportError:
         pass
 
@@ -905,6 +1088,7 @@ async def api_install_status(api_key: str = Depends(verify_api_key)):
         "torch": {"available": torch_available, "version": torch_version, "has_cuda": torch_has_cuda},
         "openvino": {"available": openvino_available, "version": openvino_version},
         "onnxruntime_gpu": onnxruntime_gpu,
+        "onnxruntime_directml": onnxruntime_directml,
         "cuda_version": cuda_version,
         "cuda_wheel_url": wheel_url,
         "install_running": install_running,
@@ -974,6 +1158,36 @@ async def api_install_openvino(api_key: str = Depends(verify_api_key)):
     if _is_install_stuck():
         _install_lock_clear()
     steps = [(["openvino", "onnxruntime-openvino"], "OpenVINO + onnxruntime-openvino")]
+    import threading
+    threading.Thread(
+        target=_run_install_chain,
+        args=(steps,),
+        daemon=True,
+    ).start()
+    return {"success": True}
+
+
+@app.post("/api/install/directml")
+async def api_install_directml(api_key: str = Depends(verify_api_key)):
+    """
+    Install onnxruntime-directml for GPU inference on any DirectX 12 GPU
+    (NVIDIA, AMD, or Intel) on Windows.
+
+    Note: ONNX Runtime ships its CPU, CUDA (onnxruntime-gpu), and DirectML
+    builds as separate, mutually exclusive packages. Installing DirectML
+    replaces any existing onnxruntime / onnxruntime-gpu install. The chain
+    therefore uninstalls the conflicting builds first.
+    """
+    if _active_install is not None and not _is_install_stuck():
+        raise HTTPException(status_code=409, detail="Another install is already running")
+    if _is_install_stuck():
+        _install_lock_clear()
+
+    steps = [
+        (["--uninstall", "onnxruntime", "onnxruntime-gpu", "onnxruntime-openvino"],
+         "Removing conflicting ONNX Runtime builds"),
+        (["onnxruntime-directml"], "onnxruntime-directml"),
+    ]
     import threading
     threading.Thread(
         target=_run_install_chain,

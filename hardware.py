@@ -37,6 +37,8 @@ class HardwareInfo:
     has_rocm: bool = False
     rocm_version: str = ""
 
+    has_directml: bool = False            # onnxruntime-directml provider present
+
     available_backends: list = field(default_factory=list)
     recommended_backend: str = "cpu"
     warnings: list = field(default_factory=list)
@@ -49,6 +51,7 @@ def detect_hardware() -> HardwareInfo:
     _detect_nvidia(info)
     _detect_intel(info)
     _detect_amd(info)
+    _detect_directml(info)
     _build_backend_list(info)
     return info
 
@@ -234,14 +237,29 @@ def _build_backend_list(info: HardwareInfo):
         if info.recommended_backend == "cpu":
             info.recommended_backend = "openvino"
 
+    if info.has_directml:
+        backends.append("directml")
+        # DirectML is a good default for AMD/Intel GPUs when nothing better is set.
+        if info.recommended_backend == "cpu" and (info.has_amd_gpu or info.has_intel_gpu):
+            info.recommended_backend = "directml"
+
     if info.has_amd_gpu and info.has_rocm:
         backends.append("rocm")
         if info.recommended_backend == "cpu":
             info.recommended_backend = "rocm"
-    elif info.has_amd_gpu:
+    elif info.has_amd_gpu and not info.has_directml:
         backends.append("amd_cpu_fallback")
 
     info.available_backends = backends
+
+
+def _detect_directml(info: HardwareInfo):
+    """Detect whether the onnxruntime-directml execution provider is available."""
+    try:
+        import onnxruntime as ort
+        info.has_directml = "DmlExecutionProvider" in ort.get_available_providers()
+    except Exception:
+        info.has_directml = False
 
 
 def hardware_info_to_dict(info: HardwareInfo) -> dict:
@@ -273,6 +291,9 @@ def hardware_info_to_dict(info: HardwareInfo) -> dict:
             "gpu_name": info.amd_gpu_name,
             "rocm_available": info.has_rocm,
             "rocm_version": info.rocm_version,
+        },
+        "directml": {
+            "available": info.has_directml,
         },
         "backends": info.available_backends,
         "recommended_backend": info.recommended_backend,

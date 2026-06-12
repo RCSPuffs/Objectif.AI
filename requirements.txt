@@ -29,6 +29,9 @@ matplotlib>=3.7.0
 # ONNX Runtime (CPU — works on all hardware)
 onnxruntime>=1.18.0
 
+# ALPR — license plate detection + OCR (downloads ONNX weights on first use)
+fast-alpr>=0.2.0
+
 # Hardware detection helpers
 psutil>=5.9.0
 py-cpuinfo>=9.0.0
@@ -44,6 +47,11 @@ py-cpuinfo>=9.0.0
 #   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
 # Then also:
 #   pip install onnxruntime-gpu
+
+# Any DirectX 12 GPU on Windows (NVIDIA / AMD / Intel) via DirectML:
+#   pip uninstall -y onnxruntime onnxruntime-gpu onnxruntime-openvino
+#   pip install onnxruntime-directml
+# (ONNX Runtime CPU/CUDA/DirectML builds are mutually exclusive — install one.)
 
 # Intel GPU (OpenVINO):
 #   pip install openvino>=2024.0

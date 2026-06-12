@@ -1,6 +1,6 @@
 # Objectif.AI User Guide
 
-**Version 0.7.8** | Open source under AGPL-3.0
+**Version 0.7.9** | Open source under AGPL-3.0
 
 ---
 
@@ -47,6 +47,17 @@ In BlueIris → AI → Configure:
 | Path | `/v1/vision/detection` |
 
 Set Objectif.AI's minimum confidence **lower** than your BlueIris trigger threshold so BlueIris receives all candidate detections and decides what to act on.
+
+### License-plate recognition (ALPR)
+
+ALPR runs on a **separate endpoint** from object detection, so BlueIris treats it as its own AI server entry. After enabling ALPR in Settings (see below), point a second BlueIris AI configuration at:
+
+| Setting | Value |
+|---------|-------|
+| URL | `http://<objectif-ai-machine-ip>:32168` |
+| Path | `/v1/vision/alpr` |
+
+Each recognized plate comes back as a prediction whose label is the plate text, with a bounding box and a combined detection×OCR confidence. Apply ALPR only to the cameras (or camera clones with a tight area-of-interest) that actually watch a driveway or road — running it on every camera wastes GPU cycles.
 
 ---
 
@@ -130,6 +141,11 @@ Note: YOLOv5 and Torchvision models require PyTorch CUDA and fall back to CPU on
 ### Intel OpenVINO
 Click **Install OpenVINO** on the Hardware tab (~200 MB). Works on Intel Arc and Intel integrated graphics.
 
+### DirectML — any DirectX 12 GPU (NVIDIA, AMD, or Intel)
+Click **Install DirectML** on the DirectML card in the Hardware tab (~20 MB), then use **Set as Backend**. DirectML runs ONNX-engine models on any DX12 GPU and is the simplest path to GPU acceleration on AMD and Intel cards on Windows.
+
+> ONNX Runtime ships its CPU, CUDA, and DirectML builds as **mutually exclusive** packages. Installing DirectML automatically removes the conflicting builds first. YOLO `.pt` and Torchvision models are unaffected (they use PyTorch, not ONNX Runtime) — only ONNX-engine models switch to DirectML.
+
 ### AMD ROCm
 Experimental, not officially tested. See [rocm.docs.amd.com](https://rocm.docs.amd.com).
 
@@ -140,6 +156,24 @@ Experimental, not officially tested. See [rocm.docs.amd.com](https://rocm.docs.a
 **Minimum Confidence:** Server-side floor — detections below this are not sent to BlueIris. Default 30%. Set lower than your BlueIris trigger threshold.
 
 **Class Filter:** When enabled, only selected COCO classes are returned. Grouped by category — click a group header to toggle all at once.
+
+---
+
+## License-Plate Recognition (ALPR)
+
+ALPR is optional and off by default. It uses the open-source [fast-alpr](https://github.com/ankandrew/fast-alpr) pipeline (MIT-licensed) — a YOLOv9-based plate detector plus an OCR model that reads the plate text.
+
+**Enabling it:**
+
+1. Make sure the `fast-alpr` package is installed (Dependencies tab — it is listed under Detection Engine).
+2. In **Settings → License Plate Recognition**, turn on **Enable ALPR**. The first time you enable it, the detector and OCR weights download from Hugging Face automatically (a few MB total) — watch the console for progress.
+3. Pick a **Detector Model** (larger input size = more accurate but slower) and an **OCR Model**, then click **Reload ALPR** if you change them.
+4. Set the **Minimum Plate Confidence** — plates below this combined detection×OCR score are not returned.
+5. Add the `/v1/vision/alpr` endpoint as a second AI server in BlueIris (see BlueIris Configuration above).
+
+Once enabled, ALPR auto-loads on every server start until you turn it off. It runs independently of object detection, so you can serve both at once.
+
+> Weights are fetched from Hugging Face on first use and cached locally. If that download host is ever unavailable, the first enable will fail until it is reachable again — already-cached weights keep working offline.
 
 ---
 
@@ -192,6 +226,14 @@ Check `logs/startup.log` and `logs/server.log`. Common causes:
 - Missing package — run `pip install -r requirements.txt`
 - Corrupt model file — delete from `models/` and re-download
 
+### ALPR not returning plates
+- Confirm **Enable ALPR** is on in Settings and the status line reads "Active"
+- Check `fast-alpr` is installed (Dependencies tab)
+- Confirm the BlueIris AI entry for ALPR uses path `/v1/vision/alpr`, not `/v1/vision/detection`
+- Lower the minimum plate confidence
+- Plates that are too small, angled, or motion-blurred won't read — use a tighter area-of-interest or a camera clone aimed at the road
+- First enable failed? The weight download needs internet on first run — check the console for a download error
+
 ---
 
 ## Updating
@@ -211,3 +253,5 @@ Never commit: `config.yaml`, `logs/`, `models/`, `.deps_installed` — all cover
 All user-facing output must use relative paths only. Exception strings go to `logs/server.log` only, never to API responses. Keep `/v1/vision/detection` backward compatible with CodeProject.AI.
 
 **License:** AGPL-3.0 due to Ultralytics. Any distribution must include complete source code.
+
+**Trademark:** Objectif.AI™ is a trademark of RCSPuffs (common-law / unregistered). The AGPL license covers the source code, not the Objectif.AI name or logo — use your own name when redistributing.

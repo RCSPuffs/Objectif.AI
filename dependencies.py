@@ -175,6 +175,19 @@ DEPENDENCY_CATALOG = [
         "manual_note": None,
         "min_version": None,
     },
+    {
+        "id": "fast_alpr",
+        "name": "fast-alpr (ALPR)",
+        "package": "fast-alpr",
+        "import_name": "fast_alpr",
+        "category": "Detection Engine",
+        "description": "License plate detection + OCR pipeline. Downloads its ONNX model weights on first use. Needed only if you use the ALPR endpoint.",
+        "required": False,
+        "size_mb": 5,
+        "install_cmd": ["fast-alpr"],
+        "manual_note": None,
+        "min_version": None,
+    },
     # ── YOLOv5 extras ───────────────────────────────────────────────────────
     {
         "id": "seaborn",
@@ -267,6 +280,20 @@ DEPENDENCY_CATALOG = [
         "size_mb": 10,
         "install_cmd": None,
         "manual_note": "Installed together with OpenVINO Runtime.",
+        "min_version": None,
+    },
+    # ── DirectML (any DX12 GPU on Windows) ──────────────────────────────────
+    {
+        "id": "onnxruntime_directml",
+        "name": "ONNX Runtime DirectML",
+        "package": "onnxruntime-directml",
+        "import_name": "onnxruntime",
+        "category": "DirectML (Any GPU)",
+        "description": "GPU-accelerated ONNX Runtime for any DirectX 12 GPU (NVIDIA, AMD, or Intel) on Windows. Mutually exclusive with the CPU and CUDA ONNX Runtime builds.",
+        "required": False,
+        "size_mb": 20,
+        "install_cmd": None,
+        "manual_note": "Use the Install button on the Hardware tab — it removes the conflicting ONNX Runtime builds first.",
         "min_version": None,
     },
     # ── AMD ROCm ────────────────────────────────────────────────────────────
@@ -381,6 +408,15 @@ def _check_onnxruntime_gpu() -> bool:
         return False
 
 
+def _check_onnxruntime_directml() -> bool:
+    """Returns True if the onnxruntime-directml provider is available."""
+    try:
+        import onnxruntime as ort
+        return "DmlExecutionProvider" in ort.get_available_providers()
+    except ImportError:
+        return False
+
+
 def check_all_dependencies() -> list:
     """
     Check all dependencies and return a list of status dicts.
@@ -424,6 +460,13 @@ def check_all_dependencies() -> list:
             entry["version"] = _get_version("onnxruntime") if ok else None
             entry["status"] = "ok" if ok else "missing"
             entry["status_label"] = "OpenVINO provider ready" if ok else "Not installed"
+
+        elif dep_id == "onnxruntime_directml":
+            ok = _check_onnxruntime_directml()
+            entry["installed"] = ok
+            entry["version"] = _get_version("onnxruntime") if ok else None
+            entry["status"] = "ok" if ok else "manual"
+            entry["status_label"] = "DirectML provider ready" if ok else "Not installed"
 
         elif dep_id == "torch_cpu":
             # torch_cpu shows as ok if torch is installed, regardless of CUDA
