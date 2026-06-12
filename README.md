@@ -1,4 +1,4 @@
-# Objectif.AI
+# Objectif.AI™
 
 **Self-hosted AI object detection server for BlueIris NVR — a drop-in CodeProject.AI replacement.**
 
