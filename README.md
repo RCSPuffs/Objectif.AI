@@ -6,7 +6,7 @@
 ![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-lightgrey)
 ![Python](https://img.shields.io/badge/python-3.10+-blue)
 
-Point BlueIris at it and it just works — no reconfiguration, no cloud. Supports 30+ object-detection models across YOLO v5–v26, RT-DETR, Faster R-CNN, SSD, and RetinaNet, plus license-plate recognition (ALPR). Runs on CPU, NVIDIA CUDA, Intel OpenVINO, AMD ROCm, or any DirectX 12 GPU via DirectML.
+Point BlueIris at it and it just works — no reconfiguration, no cloud. Supports 30+ object-detection models across YOLO v5–v26, RT-DETR, Faster R-CNN, SSD, and RetinaNet, plus license-plate recognition (ALPR) with plate suppression and per-plate cooldown timers. Runs on CPU, NVIDIA CUDA, Intel OpenVINO, AMD ROCm, or any DirectX 12 GPU via DirectML.
 
 ---
 
@@ -26,7 +26,8 @@ For auto-start on login: run `setup-service.bat`. Full docs in the dashboard Hel
 
 - **Drop-in BlueIris replacement** — same API as CodeProject.AI, zero reconfiguration
 - **30+ detection models** — switch between them in the dashboard
-- **License-plate recognition (ALPR)** — optional plate detection + OCR on `/v1/vision/alpr`
+- **License-plate recognition (ALPR)** — full Blue Iris 5.9.9 Plate Recognizer SDK support
+- **Plate suppression list** — suppress known plates entirely or set per-plate cooldown timers (0–24h)
 - **Broad GPU support** — one-click CUDA or OpenVINO, plus DirectML for any DirectX 12 GPU (NVIDIA, AMD, or Intel)
 - **Legacy GPU support** — older NVIDIA cards (GTX 10-series, Tesla P4) work via ONNX Runtime
 - **Live console** with per-detection confidence, 11 themes, optional auto-start
@@ -63,7 +64,10 @@ The Objectif.AI name and logo identify this project and may not be used to name,
 
 | Version | Notes |
 |---------|-------|
-| v0.7.9 | DirectML backend (any DX12 GPU); ALPR via fast-alpr on `/v1/vision/alpr`; fixed MobileNet/EfficientDet ONNX output routing |
+| v0.8.0 | **Blue Iris 5.9.9 ALPR support.** Full Plate Recognizer SDK compatibility (`POST /` and `/v1/plate-reader/`). Fixed an ONNX Runtime provider conflict that stopped fast-alpr returning results on CUDA machines, and a per-character OCR confidence parsing bug. New dedicated **ALPR Settings** tab: engine config, global cooldown default, a per-plate suppression list with individual cooldown timers (0–24h or never), and a Blue Iris setup guide. Click the ALPR header pill to view recent plate history. New per-level **console filter** to show/hide message types. ALPR-off no longer spams the console when Blue Iris sends plate requests. |
+| v0.7.9.2 | Fixed Dependencies tab 500 when an optional package (e.g. seaborn) has a broken import chain — version checks no longer execute modules |
+| v0.7.9.1 | Fixed DirectML/GPU installs silently no-op'ing — native runtime swaps now force-reinstall and prompt for the required restart |
+| v0.7.9 | DirectML backend (any DX12 GPU); ALPR via fast-alpr; fixed MobileNet/EfficientDet ONNX output routing |
 | v0.7.8 | Security hardening — Host-header allowlist, rate limit, WS tickets, config validation |
 | v0.7.7 | Removed system tray. Scheduled-task path fixes |
 | v0.7.6 | YOLOv5 switched to direct GitHub release URLs |

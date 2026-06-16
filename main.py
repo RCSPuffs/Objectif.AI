@@ -102,10 +102,14 @@ def _broadcast_inference_stats():
     if not _inference_ws_clients:
         return
     avg = sum(_inference_times) / len(_inference_times) if _inference_times else 0.0
+    alpr_stats = console.alpr_stats()
     payload = json.dumps({
         "type": "inference_stats",
         "last_ms": round(_last_inference_ms, 1),
         "avg_ms": round(avg, 1),
+        "alpr_active": alpr_engine.is_loaded,
+        "last_plate": alpr_stats["last_plate"],
+        "plate_count_24h": alpr_stats["count_24h"],
     })
     dead = set()
     for ws in list(_inference_ws_clients):
@@ -165,6 +169,7 @@ class HostHeaderMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         host = request.headers.get("host", "")
         if not _host_is_allowed(host):
+            console.warning(f"REJECTED {request.method} {request.url.path} — Host header {host!r} not allowed")
             return JSONResponse(
                 {"error": "Host header rejected — Objectif.AI only accepts requests on LAN/loopback addresses."},
                 status_code=400,
@@ -278,7 +283,7 @@ def _broadcast_install(msg: dict):
     _install_ws_clients -= dead
 
 
-def _run_install_chain(steps: list):
+def _run_install_chain(steps: list, restart_required: bool = False):
     """
     Run a chain of pip operations sequentially in a background thread.
     steps = [(packages_list, label_str), ...]
@@ -287,6 +292,13 @@ def _run_install_chain(steps: list):
     `pip uninstall -y <rest>` and a non-zero return code is tolerated (the
     packages may simply not be installed). All other steps run as
     `pip install <packages>` and stop the chain on failure.
+
+    restart_required: when True, the final "done" message tells the user the
+    server must be restarted for the change to take effect. This is needed for
+    native packages like onnxruntime-directml: Python cannot swap an already
+    imported native module (.pyd/.dll) in a running process, so the new
+    execution provider only becomes visible after a restart — no matter what
+    pip reports.
     """
     global _active_install, _install_start_time
 
@@ -318,13 +330,26 @@ def _run_install_chain(steps: list):
                 bufsize=1,
             )
             _active_install = proc
+            saw_download = False
             for line in proc.stdout:
                 line = line.rstrip()
                 if line:
+                    # Track whether pip actually fetched/installed anything, so a
+                    # silent "already satisfied" no-op can be reported honestly.
+                    low = line.lower()
+                    if ("downloading" in low or "installing collected" in low
+                            or "successfully installed" in low):
+                        saw_download = True
                     _broadcast_install({"status": "line", "text": line})
             proc.wait()
             # Uninstall steps are best-effort: not-installed -> non-zero is fine.
             success = proc.returncode == 0 or is_uninstall
+            if (not is_uninstall) and success and not saw_download:
+                # pip exited 0 but installed nothing new — warn rather than imply success.
+                console.warning(
+                    f"{step_label}: pip reported nothing to install (already present). "
+                    f"If the feature still isn't active, a restart may be required."
+                )
             _broadcast_install({
                 "status": "step_done",
                 "label": step_label,
@@ -348,7 +373,18 @@ def _run_install_chain(steps: list):
             _active_install = None
             _install_start_time = 0.0
 
-    _broadcast_install({"status": "done", "success": True, "returncode": 0})
+    if restart_required:
+        console.warning(
+            "Install complete — RESTART REQUIRED. The new runtime only loads on "
+            "a fresh start. Restart the server (Settings - Server - Restart Server), "
+            "then check the Hardware tab."
+        )
+    _broadcast_install({
+        "status": "done",
+        "success": True,
+        "returncode": 0,
+        "restart_required": restart_required,
+    })
 
 
 # ---------------------------------------------------------------------------
@@ -394,10 +430,10 @@ async def lifespan(app: FastAPI):
     port = cfg["server"]["port"]
 
     _startup_log("=" * 50)
-    _startup_log("Objectif.AI v0.7.9 starting up")
+    _startup_log("Objectif.AI v0.8.0 starting up")
 
     console.system("=" * 55)
-    console.system("  Objectif.AI v0.7.9 starting up...")
+    console.system("  Objectif.AI v0.8.0 starting up...")
     console.system("=" * 55)
 
     # Hardware detection
@@ -491,7 +527,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Objectif.AI",
     description="Drop-in replacement for CodeProject.AI — BlueIris compatible",
-    version="0.7.9",
+    version="0.8.0",
     lifespan=lifespan,
 )
 
@@ -623,7 +659,7 @@ async def detect_alpr(
     shape_idx = console.request_received(size_kb)
 
     if not alpr_engine.is_loaded:
-        console.no_model()
+        console.alpr_not_loaded()
         return JSONResponse({"success": False, "error": "ALPR not loaded",
             "predictions": [], "count": 0, "inferenceMs": 0, "code": 500})
 
@@ -635,10 +671,22 @@ async def detect_alpr(
     try:
         results, inference_ms = alpr_engine.recognize(image_bytes)
 
+        # Log raw results before threshold filtering so we can diagnose confidence issues
+        if results:
+            raw_summary = ", ".join(f"{r.plate}={r.confidence:.3f}" for r in results)
+            console.system(f"ALPR raw results (threshold={threshold:.2f}): {raw_summary}")
+        else:
+            console.system(f"ALPR raw results: none detected by engine (threshold={threshold:.2f})")
+
         predictions = []
         for r in results:
             if r.confidence < threshold:
+                console.system(f"ALPR filtered out {r.plate} (conf={r.confidence:.3f} < threshold={threshold:.2f})")
                 continue
+            if _plate_is_suppressed(r.plate):
+                console.system(f"ALPR suppressed {r.plate} (cooldown active)")
+                continue
+            _record_plate_seen(r.plate)
             predictions.append({
                 "label": r.plate,
                 "plate": r.plate,
@@ -662,9 +710,9 @@ async def detect_alpr(
             "requestId": "",
         }
 
-        console.detection_result(
+        console.alpr_result(
             shape_idx=shape_idx,
-            detections=predictions,
+            plates=predictions,
             inference_ms=inference_ms,
         )
         _record_inference(inference_ms)
@@ -678,12 +726,122 @@ async def detect_alpr(
             "predictions": [], "count": 0, "inferenceMs": 0, "code": 500})
 
 
+@app.post("/v1/plate-reader/")
+async def plate_reader_compat(
+    request: Request,
+    upload: UploadFile = File(...),
+    regions: Optional[str] = Form(None),
+    camera_id: Optional[str] = Form(None),
+    mmc: Optional[bool] = Form(None),
+):
+    """
+    Plate Recognizer SDK-compatible endpoint.
+
+    Blue Iris 5.9.9+ sends ALPR requests here when 'Plate Recognizer' is
+    selected in Settings > AI > License plates (ALPR). The image arrives as
+    'upload' (not 'image'), and the response must follow the Plate Recognizer
+    JSON schema: { results: [...], processing_time: float }.
+
+    The 'regions' form field is a country-code hint (e.g. 'us', 'gb') — Blue
+    Iris may send the value from its 'Region/s' config box. It is accepted but
+    ignored since fast-alpr handles multi-region detection internally.
+    """
+    client_ip = request.client.host if request.client else "unknown"
+    if not _rate_limit_check(client_ip):
+        return JSONResponse({"error": "Rate limit exceeded", "results": []},
+                            status_code=429)
+
+    image_bytes = await upload.read()
+    if len(image_bytes) > 20 * 1024 * 1024:
+        return JSONResponse({"error": "Image too large (20 MB max)", "results": []},
+                            status_code=413)
+
+    size_kb = len(image_bytes) / 1024
+    shape_idx = console.request_received(size_kb)
+
+    if not alpr_engine.is_loaded:
+        console.alpr_not_loaded()
+        return JSONResponse({"error": "ALPR not loaded", "results": []},
+                            status_code=503)
+
+    cfg = get_config()
+    alpr_cfg = cfg.get("alpr", {})
+    threshold = alpr_cfg.get("min_confidence", 0.30)
+    threshold = max(0.0, min(1.0, float(threshold)))
+
+    try:
+        results, inference_ms = alpr_engine.recognize(image_bytes)
+
+        # Log raw results before threshold filtering so we can diagnose confidence issues
+        if results:
+            raw_summary = ", ".join(f"{r.plate}={r.confidence:.3f}" for r in results)
+            console.system(f"ALPR raw results (threshold={threshold:.2f}): {raw_summary}")
+        else:
+            console.system(f"ALPR raw results: none detected by engine (threshold={threshold:.2f})")
+
+        pr_results = []
+        for r in results:
+            if r.confidence < threshold:
+                console.system(f"ALPR filtered out {r.plate} (conf={r.confidence:.3f} < threshold={threshold:.2f})")
+                continue
+            if _plate_is_suppressed(r.plate):
+                console.system(f"ALPR suppressed {r.plate} (cooldown active)")
+                continue
+            _record_plate_seen(r.plate)
+            pr_results.append({
+                "plate": r.plate,
+                "score": round(r.confidence, 4),
+                "box": {
+                    "xmin": int(r.x_min),
+                    "ymin": int(r.y_min),
+                    "xmax": int(r.x_max),
+                    "ymax": int(r.y_max),
+                },
+                "vehicle": {"type": "Car", "score": 0.9},
+                "region": {"code": (regions or "").split(",")[0].strip().lower() or ""},
+            })
+
+        console.alpr_result(
+            shape_idx=shape_idx,
+            plates=[{"label": r["plate"], "plate": r["plate"],
+                     "confidence": r["score"]} for r in pr_results],
+            inference_ms=inference_ms,
+        )
+        _record_inference(inference_ms)
+
+        return JSONResponse({
+            "results": pr_results,
+            "processing_time": round(inference_ms, 1),
+        })
+
+    except Exception as e:
+        logger.exception(f"Plate Recognizer compat error: {e}")
+        console.error(f"Plate Recognizer compat error: {e}")
+        return JSONResponse({"error": "ALPR failed — check server logs", "results": []},
+                            status_code=500)
+
+
+@app.post("/")
+async def plate_reader_root(
+    request: Request,
+    upload: UploadFile = File(...),
+    regions: Optional[str] = Form(None),
+    camera_id: Optional[str] = Form(None),
+    mmc: Optional[bool] = Form(None),
+):
+    """
+    Blue Iris 5.9.9 sends Plate Recognizer ALPR requests to POST /
+    (bare root path). Delegate to the full handler.
+    """
+    return await plate_reader_compat(request, upload, regions, camera_id, mmc)
+
+
 @app.get("/v1/status")
 async def status():
     """CPAI-compatible status endpoint."""
     return {
         "status": "OK",
-        "version": "0.7.9",
+        "version": "0.8.0",
         "platform": "Windows",
         "systemInfo": {
             "model": engine.model_info.name if engine.model_info else "None",
@@ -709,6 +867,7 @@ async def api_status(api_key: str = Depends(verify_api_key)):
     hours, rem = divmod(uptime_s, 3600)
     mins, secs = divmod(rem, 60)
 
+    alpr_s = console.alpr_stats()
     return {
         "uptime": f"{hours:02d}:{mins:02d}:{secs:02d}",
         "model": model_to_dict(engine.model_info) if engine.model_info else None,
@@ -718,6 +877,9 @@ async def api_status(api_key: str = Depends(verify_api_key)):
         "legacy_mode": engine.legacy_mode,
         "hardware": hardware_info_to_dict(_hardware_info) if _hardware_info else {},
         "server_port": cfg["server"]["port"],
+        "alpr_active": alpr_engine.is_loaded,
+        "last_plate": alpr_s["last_plate"],
+        "plate_count_24h": alpr_s["count_24h"],
     }
 
 
@@ -1024,6 +1186,7 @@ async def api_alpr_load(body: dict, api_key: str = Depends(verify_api_key)):
     update_config("alpr.ocr_model", ocr)
     update_config("alpr.active", True)
     console.success(f"ALPR ready: {detector} + {ocr}")
+    _broadcast_inference_stats()
     return {"success": True, "models": alpr_engine.active_models}
 
 
@@ -1033,6 +1196,114 @@ async def api_alpr_unload(api_key: str = Depends(verify_api_key)):
     alpr_engine.unload()
     update_config("alpr.active", False)
     console.system("ALPR pipeline unloaded")
+    _broadcast_inference_stats()
+    return {"success": True}
+
+
+# ---------------------------------------------------------------------------
+# PLATE SUPPRESSION LIST
+# Plates can be suppressed entirely (cooldown = -1) or given a per-plate
+# cooldown in seconds. The global default cooldown applies to plates not
+# explicitly listed. All state is persisted in config.yaml under
+# alpr.suppression.
+# ---------------------------------------------------------------------------
+
+def _get_suppression_config() -> dict:
+    cfg = get_config()
+    return cfg.get("alpr", {}).get("suppression", {})
+
+def _plate_is_suppressed(plate: str) -> bool:
+    """
+    Return True if this plate should be withheld from Blue Iris right now.
+    Checks per-plate cooldown first, then global default.
+    -1 cooldown = always suppress (Never report).
+    0 cooldown = always report.
+    """
+    sup = _get_suppression_config()
+    plates = sup.get("plates", {})
+    global_cooldown = int(sup.get("global_cooldown_seconds", 0))
+    last_seen = sup.get("last_seen", {})
+
+    entry = plates.get(plate.upper())
+    if entry is not None:
+        cooldown = int(entry.get("cooldown_seconds", global_cooldown))
+    else:
+        cooldown = global_cooldown
+
+    # -1 = full suppress
+    if cooldown < 0:
+        return True
+    # 0 = always report
+    if cooldown == 0:
+        return False
+
+    last_ts = last_seen.get(plate.upper(), 0)
+    return (time.time() - last_ts) < cooldown
+
+
+def _record_plate_seen(plate: str):
+    """Update last_seen timestamp for a plate."""
+    cfg = get_config()
+    sup = cfg.get("alpr", {}).get("suppression", {})
+    last_seen = dict(sup.get("last_seen", {}))
+    last_seen[plate.upper()] = time.time()
+    update_config("alpr.suppression.last_seen", last_seen)
+
+
+@app.get("/api/alpr/history")
+async def api_alpr_history(
+    limit: int = 1000,
+    api_key: str = Depends(verify_api_key),
+):
+    """
+    Return the last N plates reported to Blue Iris (in-memory, resets on restart).
+    Each entry: {plate, timestamp, confidence} sorted newest-first.
+    """
+    reads = list(console.get_plate_history(limit))
+    return {"plates": reads, "count": len(reads)}
+
+
+@app.get("/api/alpr/suppression")
+async def api_alpr_suppression_get(api_key: str = Depends(verify_api_key)):
+    """Return the full suppression config (plates list + global cooldown)."""
+    sup = _get_suppression_config()
+    return {
+        "global_cooldown_seconds": sup.get("global_cooldown_seconds", 0),
+        "plates": sup.get("plates", {}),
+    }
+
+
+@app.post("/api/alpr/suppression/global")
+async def api_alpr_suppression_global(body: dict, api_key: str = Depends(verify_api_key)):
+    """Set the global default cooldown in seconds. -1 = suppress all, 0 = always report."""
+    seconds = int(body.get("cooldown_seconds", 0))
+    update_config("alpr.suppression.global_cooldown_seconds", seconds)
+    return {"success": True, "global_cooldown_seconds": seconds}
+
+
+@app.post("/api/alpr/suppression/plates")
+async def api_alpr_suppression_add(body: dict, api_key: str = Depends(verify_api_key)):
+    """Add or update a plate entry. cooldown_seconds: -1=never, 0=always, N=cooldown."""
+    plate = str(body.get("plate", "")).strip().upper()
+    if not plate:
+        raise HTTPException(status_code=400, detail="plate is required")
+    cooldown = int(body.get("cooldown_seconds", -1))
+    label = str(body.get("label", "")).strip()
+    sup = _get_suppression_config()
+    plates = dict(sup.get("plates", {}))
+    plates[plate] = {"cooldown_seconds": cooldown, "label": label}
+    update_config("alpr.suppression.plates", plates)
+    return {"success": True, "plate": plate, "cooldown_seconds": cooldown}
+
+
+@app.delete("/api/alpr/suppression/plates/{plate}")
+async def api_alpr_suppression_delete(plate: str, api_key: str = Depends(verify_api_key)):
+    """Remove a plate from the suppression list."""
+    plate = plate.strip().upper()
+    sup = _get_suppression_config()
+    plates = dict(sup.get("plates", {}))
+    plates.pop(plate, None)
+    update_config("alpr.suppression.plates", plates)
     return {"success": True}
 
 
@@ -1129,6 +1400,7 @@ async def api_install_cuda(api_key: str = Depends(verify_api_key)):
     threading.Thread(
         target=_run_install_chain,
         args=(steps,),
+        kwargs={"restart_required": True},
         daemon=True,
     ).start()
     return {"success": True, "wheel_url": wheel_url, "steps": 1}
@@ -1145,6 +1417,7 @@ async def api_install_onnxruntime_gpu(api_key: str = Depends(verify_api_key)):
     threading.Thread(
         target=_run_install_chain,
         args=([( ["onnxruntime-gpu"], "onnxruntime-gpu")],),
+        kwargs={"restart_required": True},
         daemon=True,
     ).start()
     return {"success": True}
@@ -1162,6 +1435,7 @@ async def api_install_openvino(api_key: str = Depends(verify_api_key)):
     threading.Thread(
         target=_run_install_chain,
         args=(steps,),
+        kwargs={"restart_required": True},
         daemon=True,
     ).start()
     return {"success": True}
@@ -1184,14 +1458,15 @@ async def api_install_directml(api_key: str = Depends(verify_api_key)):
         _install_lock_clear()
 
     steps = [
-        (["--uninstall", "onnxruntime", "onnxruntime-gpu", "onnxruntime-openvino"],
+        (["--uninstall", "onnxruntime", "onnxruntime-gpu", "onnxruntime-openvino", "onnxruntime-directml"],
          "Removing conflicting ONNX Runtime builds"),
-        (["onnxruntime-directml"], "onnxruntime-directml"),
+        (["--force-reinstall", "--no-cache-dir", "onnxruntime-directml"], "onnxruntime-directml"),
     ]
     import threading
     threading.Thread(
         target=_run_install_chain,
         args=(steps,),
+        kwargs={"restart_required": True},
         daemon=True,
     ).start()
     return {"success": True}
@@ -1292,14 +1567,17 @@ async def websocket_endpoint(websocket: WebSocket):
         # Send history to new client
         await console.send_history(websocket, last_n=200)
 
-        # Send current inference stats immediately on connect
-        if _inference_times:
-            avg = sum(_inference_times) / len(_inference_times)
-            await websocket.send_text(json.dumps({
-                "type": "inference_stats",
-                "last_ms": round(_last_inference_ms, 1),
-                "avg_ms": round(avg, 1),
-            }))
+        # Send current inference + ALPR stats immediately on connect
+        avg = (sum(_inference_times) / len(_inference_times)) if _inference_times else 0.0
+        _alpr_stats = console.alpr_stats()
+        await websocket.send_text(json.dumps({
+            "type": "inference_stats",
+            "last_ms": round(_last_inference_ms, 1),
+            "avg_ms": round(avg, 1),
+            "alpr_active": alpr_engine.is_loaded,
+            "last_plate": _alpr_stats["last_plate"],
+            "plate_count_24h": _alpr_stats["count_24h"],
+        }))
 
         # Keep alive — listen for pings from client
         while True:

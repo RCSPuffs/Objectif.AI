@@ -1,6 +1,6 @@
 # Objectif.AI User Guide
 
-**Version 0.7.9** | Open source under AGPL-3.0
+**Version 0.8.0** | Open source under AGPL-3.0
 
 ---
 
@@ -36,7 +36,7 @@ The key protects management endpoints (downloads, settings, restart). The BlueIr
 
 ---
 
-## BlueIris Configuration
+## BlueIris Configuration — Object Detection
 
 In BlueIris → AI → Configure:
 
@@ -48,16 +48,64 @@ In BlueIris → AI → Configure:
 
 Set Objectif.AI's minimum confidence **lower** than your BlueIris trigger threshold so BlueIris receives all candidate detections and decides what to act on.
 
-### License-plate recognition (ALPR)
+---
 
-ALPR runs on a **separate endpoint** from object detection, so BlueIris treats it as its own AI server entry. After enabling ALPR in Settings (see below), point a second BlueIris AI configuration at:
+## License Plate Recognition (ALPR)
 
-| Setting | Value |
-|---------|-------|
-| URL | `http://<objectif-ai-machine-ip>:32168` |
-| Path | `/v1/vision/alpr` |
+ALPR is optional and off by default. It uses the open-source [fast-alpr](https://github.com/ankandrew/fast-alpr) pipeline (MIT-licensed) — a YOLOv9-based plate detector plus an OCR model that reads the plate text.
 
-Each recognized plate comes back as a prediction whose label is the plate text, with a bounding box and a combined detection×OCR confidence. Apply ALPR only to the cameras (or camera clones with a tight area-of-interest) that actually watch a driveway or road — running it on every camera wastes GPU cycles.
+All ALPR configuration lives in the **ALPR Settings** tab of the dashboard.
+
+### Step 1 — Enable ALPR in Objectif.AI
+
+1. Go to the **Dependencies** tab and confirm `fast-alpr` is installed. If not, click Install.
+2. Go to the **ALPR Settings** tab.
+3. Turn on **Enable ALPR**. The first time you enable it, the detector and OCR weights download from Hugging Face automatically (~50 MB total) — watch the console for progress.
+4. Set the **Detector Model** and **OCR Model**. Recommended for North American plates:
+   - Detector: `yolo-v9-t-384-license-plate-end2end`
+   - OCR: `global-plates-mobile-vit-v2-model`
+5. Click **Reload ALPR** if you change models.
+6. Set **Minimum Plate Confidence** — plates below this combined detection×OCR score are not reported. Start at 20–30% and adjust based on real results.
+
+### Step 2 — Configure Blue Iris 5.9.9
+
+Blue Iris 5.9.9 uses the **Plate Recognizer SDK** protocol for ALPR. This is a separate connection from regular object detection — you do not need to add a second AI server entry.
+
+1. In Blue Iris → **Settings → AI**, find the **License plates (ALPR)** section at the bottom.
+2. Set the dropdown to **Plate Recognizer®**.
+3. Click **Configure…** next to it.
+4. Select **On-Premise SDK Port** and enter this machine's IP and port: `192.168.x.x:32168`
+5. Leave the **Region/s** field **blank** (or enter a country code like `us`). Do **not** put a path or URL in this field.
+6. Uncheck **Make/Model/Color analysis** — this feature is not supported.
+7. Click OK.
+
+### Step 3 — Camera Setup (Recommended)
+
+**Clone your street-facing or driveway camera in Blue Iris.** This is the cleanest approach:
+
+- **Original camera** — detects people, animals, etc. → triggers recordings and alerts as normal
+- **Cloned camera** — detects cars and trucks → fires ALPR quietly, no recordings
+
+To set this up on the cloned camera:
+1. Right-click the camera → **Camera Properties → AI tab**
+2. Tick **License plates**
+3. Optionally tick **Only when vehicles are detected** — this sends images to ALPR only when a vehicle is also detected, reducing unnecessary calls
+4. Go to the **Alert** tab and **disable recording** on the motion trigger for this clone
+
+The clone shares the same video stream so there is no extra camera or bandwidth overhead.
+
+### Plate Suppression
+
+Use the **Known Plates** section of the ALPR Settings tab to manage which plates are reported to Blue Iris.
+
+**Global Cooldown Default** — applies to all plates not explicitly listed. Set to 0 to always report every plate. Set to a duration to throttle re-reporting. Set to -1 (Never) to suppress all unlisted plates.
+
+**Per-plate entries** — add a plate to set an individual cooldown:
+- **Never report** — fully suppresses this plate (useful for your own car parked outside)
+- **Always report** — always reports this plate regardless of the global default
+- **Duration (5 min – 24h)** — throttles re-reporting; the plate is reported once, then suppressed until the cooldown expires
+
+> Weights are fetched from Hugging Face on first use and cached locally. If that download host is ever unavailable, the first enable will fail until it is reachable again — already-cached weights keep working offline.
 
 ---
 
@@ -74,14 +122,6 @@ Each recognized plate comes back as a prediction whose label is the plate text, 
 
 **Size guide:** Nano = fastest/least accurate. XLarge = slowest/most accurate. Small or Medium is best for most security camera setups — start there and only go larger if you are missing detections you care about.
 
-**Model families:**
-- **YOLO v11/v26** — newest generation, best overall
-- **YOLO v8** — mature, well tested, excellent OpenVINO support
-- **YOLO v5** — classic; requires seaborn/pandas/matplotlib (installed automatically on first load)
-- **RT-DETR** — transformer-based, good for complex overlapping scenes, GPU recommended
-- **Faster R-CNN** — strong accuracy on difficult scenes, higher latency
-- **SSD / SSDLite / RetinaNet** — fast single-stage alternatives, good CPU performance
-
 ---
 
 ## Downloading and Loading Models
@@ -94,10 +134,6 @@ Every model follows the same three-step flow regardless of type:
 
 A **Delete** button appears alongside Load Model for any downloaded model that is not currently active.
 
-**YOLO v5 note:** Downloads the model weights directly from GitHub (same as all other YOLO models). Real percentage progress is shown during download.
-
-**Torchvision note (Faster R-CNN, SSD, SSDLite, RetinaNet):** Same indeterminate progress bar during download. PyTorch saves these to a checkpoints subfolder under `models/` — the exact subfolder varies by PyTorch version but Objectif.AI finds them automatically.
-
 ---
 
 ## The Console
@@ -108,13 +144,14 @@ Each incoming image gets a shape symbol (●, ■, ▲, ◆, ★…). The matchi
 |-------|---------|
 | IN (blue) | Image received from BlueIris |
 | OUT (cyan) | Detection result returned |
+| PLATE (green) | License plate recognized (ALPR) |
 | SYS (purple) | Server status messages |
 | WARN (amber) | Warnings |
 | ERR (red) | Errors |
 
 In **Settings → Display** toggle between expanded (each detected object on its own indented line, confidence color-coded green/amber/red) and compact (all on one line) display.
 
-The header shows **last** inference time and **avg** (rolling average of last 20). Update frequency is adjustable in Settings.
+Use the **Filter ▾** button at the top-right of the console to choose which message types appear (requests, detections, plates, system, info, warnings, errors). The selection is saved and survives restarts — handy if you want a quiet console showing only plates, or a verbose one showing every request for troubleshooting.
 
 ---
 
@@ -136,18 +173,11 @@ Then restart the server.
 ### Legacy GPU — CC below 7.5 (GTX 10-series, Tesla P4, GTX 1060)
 Handled automatically. On first YOLO model load, Objectif.AI exports to ONNX (up to 60 seconds — progress shown in console) and caches it in `models/`. Subsequent loads are instant. Requires `onnxruntime-gpu` — install via Dependencies tab.
 
-Note: YOLOv5 and Torchvision models require PyTorch CUDA and fall back to CPU on legacy GPUs.
-
 ### Intel OpenVINO
 Click **Install OpenVINO** on the Hardware tab (~200 MB). Works on Intel Arc and Intel integrated graphics.
 
 ### DirectML — any DirectX 12 GPU (NVIDIA, AMD, or Intel)
 Click **Install DirectML** on the DirectML card in the Hardware tab (~20 MB), then use **Set as Backend**. DirectML runs ONNX-engine models on any DX12 GPU and is the simplest path to GPU acceleration on AMD and Intel cards on Windows.
-
-> ONNX Runtime ships its CPU, CUDA, and DirectML builds as **mutually exclusive** packages. Installing DirectML automatically removes the conflicting builds first. YOLO `.pt` and Torchvision models are unaffected (they use PyTorch, not ONNX Runtime) — only ONNX-engine models switch to DirectML.
-
-### AMD ROCm
-Experimental, not officially tested. See [rocm.docs.amd.com](https://rocm.docs.amd.com).
 
 ---
 
@@ -156,24 +186,6 @@ Experimental, not officially tested. See [rocm.docs.amd.com](https://rocm.docs.a
 **Minimum Confidence:** Server-side floor — detections below this are not sent to BlueIris. Default 30%. Set lower than your BlueIris trigger threshold.
 
 **Class Filter:** When enabled, only selected COCO classes are returned. Grouped by category — click a group header to toggle all at once.
-
----
-
-## License-Plate Recognition (ALPR)
-
-ALPR is optional and off by default. It uses the open-source [fast-alpr](https://github.com/ankandrew/fast-alpr) pipeline (MIT-licensed) — a YOLOv9-based plate detector plus an OCR model that reads the plate text.
-
-**Enabling it:**
-
-1. Make sure the `fast-alpr` package is installed (Dependencies tab — it is listed under Detection Engine).
-2. In **Settings → License Plate Recognition**, turn on **Enable ALPR**. The first time you enable it, the detector and OCR weights download from Hugging Face automatically (a few MB total) — watch the console for progress.
-3. Pick a **Detector Model** (larger input size = more accurate but slower) and an **OCR Model**, then click **Reload ALPR** if you change them.
-4. Set the **Minimum Plate Confidence** — plates below this combined detection×OCR score are not returned.
-5. Add the `/v1/vision/alpr` endpoint as a second AI server in BlueIris (see BlueIris Configuration above).
-
-Once enabled, ALPR auto-loads on every server start until you turn it off. It runs independently of object detection, so you can serve both at once.
-
-> Weights are fetched from Hugging Face on first use and cached locally. If that download host is ever unavailable, the first enable will fail until it is reachable again — already-cached weights keep working offline.
 
 ---
 
@@ -192,47 +204,36 @@ Once enabled, ALPR auto-loads on every server start until you turn it off. It ru
 - Lower the minimum confidence threshold
 - Disable the class filter to rule it out
 
+### ALPR not working — no PLATE lines in console
+- Confirm **Enable ALPR** is on in the ALPR Settings tab and the status line reads "Active"
+- Check `fast-alpr` is installed (Dependencies tab)
+- Confirm the Blue Iris Plate Recognizer config has the correct IP:port and the Region/s field does not contain a path
+- Check that **Make/Model/Color analysis** is unchecked in Blue Iris
+
+### ALPR running but not finding plates
+- Lower the **Minimum Plate Confidence** in ALPR Settings
+- Plates that are too small, angled, or motion-blurred won't read — use a tighter area-of-interest or a camera clone aimed at the road
+- Try a clearer plate image via the `/docs` test page at `http://localhost:32168/docs`
+
+### My own car is being reported constantly
+- Go to **ALPR Settings → Known Plates**, add your plate, and set cooldown to **Never report**
+
 ### GPU not being used
 - Hardware tab — check status dots and package badges
 - Dependencies tab — check for missing packages
 - Use Set as Backend on the Hardware card
 - Restart server — model reloads on new backend automatically
 
-### Model shows "Download Model" after already downloading
-If you downloaded a torchvision model (Faster R-CNN, SSD, etc.) and the button still shows "Download Model" after restarting, the file may have been saved to an unexpected location. Check the `models/` folder and all subfolders for `.pth` files. If found, the detection should work on the next model list refresh.
-
-### Legacy GPU first load is slow
-ONNX export takes up to 60 seconds per model, once only. Watch the console for progress. Subsequent loads are instant from the cached `.legacy.onnx` file.
-
-### YOLOv5 fails to load
-Needs seaborn, pandas, matplotlib — usually installed automatically. If not:
-```
-pip install seaborn pandas matplotlib
-```
-
 ### Scheduled task not starting
 - Check `logs/startup.log`
 - Open Windows Task Scheduler → find ObjectifAI → check Last Run Result
 - Run `setup-service.bat` again to re-register
-
-### Model download fails
-- YOLO v26 models are Experimental — URLs may not exist yet
-- EfficientDet and MobileNet SSD are manual install only (place `.onnx` in `models/`)
-- Interrupted downloads clean up `.tmp` files automatically
 
 ### Server crashes on startup
 Check `logs/startup.log` and `logs/server.log`. Common causes:
 - Port 32168 already in use (another instance, or CodeProject.AI still running)
 - Missing package — run `pip install -r requirements.txt`
 - Corrupt model file — delete from `models/` and re-download
-
-### ALPR not returning plates
-- Confirm **Enable ALPR** is on in Settings and the status line reads "Active"
-- Check `fast-alpr` is installed (Dependencies tab)
-- Confirm the BlueIris AI entry for ALPR uses path `/v1/vision/alpr`, not `/v1/vision/detection`
-- Lower the minimum plate confidence
-- Plates that are too small, angled, or motion-blurred won't read — use a tighter area-of-interest or a camera clone aimed at the road
-- First enable failed? The weight download needs internet on first run — check the console for a download error
 
 ---
 

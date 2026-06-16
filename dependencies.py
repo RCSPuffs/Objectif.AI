@@ -345,31 +345,69 @@ DEPENDENCY_CATALOG = [
 # ---------------------------------------------------------------------------
 
 def _get_version(import_name: str) -> Optional[str]:
-    """Try to get the installed version of a package."""
+    """
+    Try to get the installed version of a package.
+
+    Prefers importlib.metadata (reads package metadata WITHOUT executing the
+    module), falling back to importing only if metadata can't resolve it. The
+    whole thing is guarded against ANY exception: a broken transitive dependency
+    (e.g. a numpy/scipy/seaborn version mismatch) must never 500 the
+    /api/dependencies endpoint — it should just report the version as unknown.
+    """
+    # Map import name -> distribution name for metadata lookup.
+    pkg_map = {
+        "cv2": "opencv-python",
+        "PIL": "Pillow",
+        "yaml": "PyYAML",
+        "sklearn": "scikit-learn",
+        "multipart": "python-multipart",
+        "cpuinfo": "py-cpuinfo",
+        "fast_alpr": "fast-alpr",
+    }
+    pkg_name = pkg_map.get(import_name, import_name)
+
+    # 1) Metadata first — no module execution, so it can't trip over a broken
+    #    import chain. This is the safest and fastest path.
+    try:
+        from importlib.metadata import version as meta_version, PackageNotFoundError
+        try:
+            return meta_version(pkg_name)
+        except PackageNotFoundError:
+            pass  # not installed under that dist name — fall through
+        except Exception:
+            pass
+    except Exception:
+        pass
+
+    # 2) Fall back to importing the module to read __version__. Guard against
+    #    EVERYTHING (not just ImportError) — broken deps raise AttributeError,
+    #    OSError, RuntimeError, etc. during import.
     try:
         mod = importlib.import_module(import_name)
         for attr in ("__version__", "version", "VERSION"):
             v = getattr(mod, attr, None)
             if v and isinstance(v, str):
                 return v
-        # Try importlib.metadata
-        try:
-            from importlib.metadata import version as meta_version, PackageNotFoundError
-            # Map import name to package name for metadata lookup
-            pkg_map = {
-                "cv2": "opencv-python",
-                "PIL": "Pillow",
-                "yaml": "PyYAML",
-                "sklearn": "scikit-learn",
-                "multipart": "python-multipart",
-                "cpuinfo": "py-cpuinfo",
-            }
-            pkg_name = pkg_map.get(import_name, import_name)
-            return meta_version(pkg_name)
-        except Exception:
-            return "installed"
+        # Imported fine but exposes no version string.
+        return "installed"
     except ImportError:
-        return None
+        return None  # genuinely not installed
+    except Exception:
+        # Installed but its import chain is broken. It IS present, so don't
+        # report it as missing — report an unknown/broken version instead.
+        return "installed (version unavailable)"
+
+
+def _is_importable(import_name: str) -> bool:
+    """
+    Whether a module can be found, WITHOUT importing it (no code execution).
+    Used so a broken-but-present optional dep is still reported as installed.
+    """
+    try:
+        import importlib.util
+        return importlib.util.find_spec(import_name) is not None
+    except Exception:
+        return False
 
 
 def _check_torch_cuda() -> bool:
@@ -429,9 +467,27 @@ def check_all_dependencies() -> list:
     results = []
 
     for dep in DEPENDENCY_CATALOG:
-        entry = dict(dep)
-        dep_id = dep["id"]
+        try:
+            entry = _check_single_dependency(dep)
+        except Exception as e:
+            # Never let one bad dependency check break the entire page.
+            entry = dict(dep)
+            entry["installed"] = False
+            entry["version"] = None
+            entry["status"] = "unknown"
+            entry["status_label"] = "Check failed"
+            logger.warning(f"Dependency check failed for {dep.get('id')}: {e}")
+        results.append(entry)
 
+    return results
+
+
+def _check_single_dependency(dep: dict) -> dict:
+    """Check one catalog entry. Raises on unexpected error (caller guards)."""
+    entry = dict(dep)
+    dep_id = dep["id"]
+
+    if True:
         # Special checks for GPU-specific variants
         if dep_id == "torch_cuda":
             has_cuda = _check_torch_cuda()
@@ -498,9 +554,7 @@ def check_all_dependencies() -> list:
                 entry["status"] = "missing"
                 entry["status_label"] = "Not installed"
 
-        results.append(entry)
-
-    return results
+    return entry
 
 
 def get_python_info() -> dict:

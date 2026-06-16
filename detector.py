@@ -999,7 +999,24 @@ class ALPREngine:
                 f"Loading ALPR pipeline (detector={detector_model}, ocr={ocr_model}). "
                 f"First load downloads model weights — this may take a moment..."
             )
-            alpr = ALPR(detector_model=detector_model, ocr_model=ocr_model)
+            # Force CPU-only ONNX providers for fast-alpr.
+            # open_image_models calls ort.get_available_providers() to build its
+            # provider list, then passes it to InferenceSession. We patch both
+            # so only CPUExecutionProvider is used during ALPR init, then restore.
+            import onnxruntime as _ort
+            _orig_get_providers = _ort.get_available_providers
+            _orig_session = _ort.InferenceSession
+            def _cpu_providers(): return ["CPUExecutionProvider"]
+            def _cpu_only_session(model, sess_options=None, providers=None, **kw):
+                return _orig_session(model, sess_options=sess_options,
+                                     providers=["CPUExecutionProvider"], **kw)
+            _ort.get_available_providers = _cpu_providers
+            _ort.InferenceSession = _cpu_only_session
+            try:
+                alpr = ALPR(detector_model=detector_model, ocr_model=ocr_model)
+            finally:
+                _ort.get_available_providers = _orig_get_providers
+                _ort.InferenceSession = _orig_session
             with self._lock:
                 self._alpr = alpr
                 self._detector_model = detector_model
@@ -1054,7 +1071,14 @@ class ALPREngine:
                     continue
                 bbox = det.bounding_box
                 det_conf = float(getattr(det, "confidence", 1.0) or 1.0)
-                ocr_conf = float(getattr(ocr, "confidence", 1.0) or 1.0)
+                # ocr.confidence is a per-character list in fast-alpr
+                # (e.g. [0.085, 0.971, 0.785, ...]) — average them for an
+                # overall OCR confidence score.
+                raw_ocr_conf = getattr(ocr, "confidence", 1.0)
+                if isinstance(raw_ocr_conf, (list, tuple)) and len(raw_ocr_conf) > 0:
+                    ocr_conf = sum(raw_ocr_conf) / len(raw_ocr_conf)
+                else:
+                    ocr_conf = float(raw_ocr_conf or 1.0)
                 results.append(ALPRResult(
                     plate=str(ocr.text).strip().upper(),
                     confidence=det_conf * ocr_conf,

@@ -24,6 +24,7 @@ class LogLevel(str, Enum):
     ERROR = "error"
     REQUEST = "request"       # Incoming image from BlueIris
     DETECTION = "detection"   # Detection result
+    ALPR = "alpr"             # License plate recognition result
     SYSTEM = "system"
 
 
@@ -77,6 +78,10 @@ class ConsoleBuffer:
         self._clients: set = set()
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._next_shape_idx: int = 0
+        # Rolling 24h plate-read tracker (in-memory; resets on restart).
+        # deque of (timestamp, plate_text); pruned to 24h on each ALPR result.
+        self._plate_reads: deque = deque()   # (timestamp, plate_text, confidence)
+        self._last_plate: Optional[str] = None
 
     def resize(self, new_size: int):
         self._max_size = new_size
@@ -197,9 +202,94 @@ class ConsoleBuffer:
         )
         self._append_and_broadcast(entry)
 
+    def alpr_result(
+        self,
+        shape_idx: int,
+        plates: list,
+        inference_ms: float,
+    ):
+        """
+        Log a license-plate recognition result, paired with a prior request.
+        `plates` is a list of {label/plate, confidence} dicts (the ALPR predictions).
+        Records each read into the rolling 24h tracker.
+        """
+        sorted_plates = sorted(plates, key=lambda d: d["confidence"], reverse=True)
+
+        # Record reads into the 24h tracker (total reads, not unique).
+        now = time.time()
+        for p in sorted_plates:
+            text = p.get("plate") or p.get("label") or "?"
+            conf = float(p.get("confidence", 0.0))
+            self._plate_reads.append((now, text, conf))
+            self._last_plate = text
+        self._prune_plate_reads(now)
+
+        if sorted_plates:
+            plate_list = ", ".join((p.get("plate") or p.get("label") or "?") for p in sorted_plates)
+            msg = f"Plate: {plate_list} — {inference_ms:.1f} ms"
+        else:
+            msg = f"No plate found — {inference_ms:.1f} ms"
+
+        entry = _make_entry(
+            LogLevel.ALPR,
+            msg,
+            shape_index=shape_idx,
+            inference_ms=inference_ms,
+            detections=sorted_plates,
+        )
+        self._append_and_broadcast(entry)
+
+    def _prune_plate_reads(self, now: Optional[float] = None):
+        """Drop plate reads older than 24h. Cheap — runs on each ALPR result."""
+        if now is None:
+            now = time.time()
+        cutoff = now - 86400
+        while self._plate_reads and self._plate_reads[0][0] < cutoff:
+            self._plate_reads.popleft()
+
+    def alpr_stats(self) -> dict:
+        """Header readout: last plate seen and total reads in the last 24h."""
+        self._prune_plate_reads()
+        return {
+            "last_plate": self._last_plate,
+            "count_24h": len(self._plate_reads),
+        }
+
+    def get_plate_history(self, limit: int = 1000) -> list:
+        """
+        Return the last `limit` plate reads, newest first.
+        Each entry is a dict: {plate, timestamp, confidence}.
+        Reads are kept for 24h in memory and reset on server restart.
+        """
+        self._prune_plate_reads()
+        reads = list(self._plate_reads)
+        reads.reverse()
+        return [
+            {"plate": r[1], "timestamp": r[0], "confidence": round(r[2], 4)}
+            for r in reads[:limit]
+        ]
+
     def no_model(self):
         self._append_and_broadcast(
             _make_entry(LogLevel.WARNING, "No model loaded — request ignored")
+        )
+
+    def alpr_not_loaded(self):
+        """
+        Logged when an ALPR request arrives but ALPR is not enabled. This is
+        common and benign (Blue Iris is configured to send plate requests but
+        the user hasn't turned ALPR on), so it is rate-limited to at most once
+        per 60 seconds to avoid flooding the console.
+        """
+        now = time.time()
+        last = getattr(self, "_last_alpr_notice", 0)
+        if now - last < 60:
+            return
+        self._last_alpr_notice = now
+        self._append_and_broadcast(
+            _make_entry(LogLevel.SYSTEM,
+                "ALPR request received but ALPR is off — ignoring. "
+                "Enable it in ALPR Settings, or remove the Plate Recognizer config in Blue Iris.")
         )
 
     # ------------------------------------------------------------------
