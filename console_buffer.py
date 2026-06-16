@@ -45,6 +45,10 @@ class LogEntry:
     shape_index: Optional[int] = None   # index into SHAPES, for request/detection pairs
     inference_ms: Optional[float] = None
     detections: Optional[list] = None   # list of {label, confidence} dicts
+    model: Optional[str] = None         # model/engine that served this inference
+    backend: Optional[str] = None       # active backend badge: CUDA/CPU/DML/OpenVINO
+    timing: Optional[dict] = None       # {preprocess, inference, postprocess} or {decode, inference}
+    source: Optional[str] = None        # endpoint type: "detection" | "alpr" | "onnx"
 
 
 _entry_counter = itertools.count(1)
@@ -80,7 +84,7 @@ class ConsoleBuffer:
         self._next_shape_idx: int = 0
         # Rolling 24h plate-read tracker (in-memory; resets on restart).
         # deque of (timestamp, plate_text); pruned to 24h on each ALPR result.
-        self._plate_reads: deque = deque()   # (timestamp, plate_text, confidence)
+        self._plate_reads: deque = deque()   # (timestamp, plate_text, confidence, thumbnail)
         self._last_plate: Optional[str] = None
 
     def resize(self, new_size: int):
@@ -182,6 +186,10 @@ class ConsoleBuffer:
         shape_idx: int,
         detections: list,
         inference_ms: float,
+        model: Optional[str] = None,
+        backend: Optional[str] = None,
+        timing: Optional[dict] = None,
+        source: str = "detection",
     ):
         """Log a detection result, paired with a prior request via shape_idx."""
         # Sort by confidence descending — frontend uses this order for display
@@ -199,6 +207,10 @@ class ConsoleBuffer:
             shape_index=shape_idx,
             inference_ms=inference_ms,
             detections=sorted_dets,  # always full sorted list
+            model=model,
+            backend=backend,
+            timing=timing,
+            source=source,
         )
         self._append_and_broadcast(entry)
 
@@ -207,6 +219,9 @@ class ConsoleBuffer:
         shape_idx: int,
         plates: list,
         inference_ms: float,
+        model: Optional[str] = None,
+        backend: Optional[str] = None,
+        timing: Optional[dict] = None,
     ):
         """
         Log a license-plate recognition result, paired with a prior request.
@@ -216,13 +231,18 @@ class ConsoleBuffer:
         sorted_plates = sorted(plates, key=lambda d: d["confidence"], reverse=True)
 
         # Record reads into the 24h tracker (total reads, not unique).
+        # Each read: (timestamp, plate_text, confidence, thumbnail).
+        # Thumbnails are capped to the most recent THUMB_CAP reads to bound
+        # memory — older reads keep text/confidence but drop the image.
         now = time.time()
         for p in sorted_plates:
             text = p.get("plate") or p.get("label") or "?"
             conf = float(p.get("confidence", 0.0))
-            self._plate_reads.append((now, text, conf))
+            thumb = p.get("thumbnail", "") or ""
+            self._plate_reads.append((now, text, conf, thumb))
             self._last_plate = text
         self._prune_plate_reads(now)
+        self._prune_plate_thumbnails()
 
         if sorted_plates:
             plate_list = ", ".join((p.get("plate") or p.get("label") or "?") for p in sorted_plates)
@@ -236,8 +256,28 @@ class ConsoleBuffer:
             shape_index=shape_idx,
             inference_ms=inference_ms,
             detections=sorted_plates,
+            model=model,
+            backend=backend,
+            timing=timing,
+            source="alpr",
         )
         self._append_and_broadcast(entry)
+
+    def _prune_plate_thumbnails(self):
+        """
+        Keep base64 thumbnails only for the most recent THUMB_CAP plate reads.
+        Strips the image off older entries to bound memory while preserving the
+        text/confidence/timestamp record.
+        """
+        THUMB_CAP = 100
+        thumbed = [i for i, r in enumerate(self._plate_reads) if len(r) > 3 and r[3]]
+        if len(thumbed) <= THUMB_CAP:
+            return
+        # Strip thumbnails from all but the last THUMB_CAP thumbed entries
+        to_strip = set(thumbed[:-THUMB_CAP])
+        for i in to_strip:
+            r = self._plate_reads[i]
+            self._plate_reads[i] = (r[0], r[1], r[2], "")
 
     def _prune_plate_reads(self, now: Optional[float] = None):
         """Drop plate reads older than 24h. Cheap — runs on each ALPR result."""
@@ -258,16 +298,23 @@ class ConsoleBuffer:
     def get_plate_history(self, limit: int = 1000) -> list:
         """
         Return the last `limit` plate reads, newest first.
-        Each entry is a dict: {plate, timestamp, confidence}.
+        Each entry: {plate, timestamp, confidence, thumbnail}.
         Reads are kept for 24h in memory and reset on server restart.
+        Only the most recent ~100 reads carry a thumbnail (older ones are "").
         """
         self._prune_plate_reads()
         reads = list(self._plate_reads)
         reads.reverse()
-        return [
-            {"plate": r[1], "timestamp": r[0], "confidence": round(r[2], 4)}
-            for r in reads[:limit]
-        ]
+        out = []
+        for r in reads[:limit]:
+            thumb = r[3] if len(r) > 3 else ""
+            out.append({
+                "plate": r[1],
+                "timestamp": r[0],
+                "confidence": round(r[2], 4),
+                "thumbnail": thumb,
+            })
+        return out
 
     def no_model(self):
         self._append_and_broadcast(

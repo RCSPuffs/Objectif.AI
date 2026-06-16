@@ -20,10 +20,14 @@ MODELS_DIR.mkdir(exist_ok=True)
 
 
 class DetectionResult:
-    def __init__(self, detections: list, inference_ms: float, model_id: str):
+    def __init__(self, detections: list, inference_ms: float, model_id: str,
+                 timing: Optional[dict] = None):
         self.detections = detections        # list of dicts: label, confidence, x_min, y_min, x_max, y_max
         self.inference_ms = inference_ms
         self.model_id = model_id
+        # Optional timing split: {"preprocess": ms, "inference": ms, "postprocess": ms}.
+        # When absent, only the total (inference_ms) is known.
+        self.timing = timing or {}
 
     def to_cpai_response(self, min_confidence: float = 0.0, filter_enabled: bool = False,
                          allowed_classes: Optional[list] = None) -> dict:
@@ -95,6 +99,25 @@ class InferenceEngine:
     @property
     def model_info(self) -> Optional[ModelInfo]:
         return self._model_info
+
+    @property
+    def active_backend(self) -> str:
+        """
+        The backend actually in use for inference, normalized to a short label
+        for the console badge: CUDA, CPU, DML, OpenVINO, or ROCm. Reflects what
+        the engine resolved at load time — so a silent fallback (e.g. CUDA
+        requested but CPU used) shows truthfully.
+        """
+        d = (self._device or "cpu").lower()
+        if "cuda" in d:
+            return "CUDA"
+        if "dml" in d or "directml" in d:
+            return "DML"
+        if "openvino" in d:
+            return "OpenVINO"
+        if "rocm" in d:
+            return "ROCm"
+        return "CPU"
 
     @property
     def is_loading(self) -> bool:
@@ -463,7 +486,22 @@ class InferenceEngine:
             verbose=False,
             conf=0.01,  # We apply our own threshold later
         )
-        inference_ms = (time.perf_counter() - t0) * 1000
+        wall_ms = (time.perf_counter() - t0) * 1000
+
+        # Ultralytics exposes a per-stage speed breakdown (milliseconds) on each
+        # result. Use it for the timing split; fall back to wall-clock total.
+        timing = {}
+        try:
+            spd = results[0].speed if results else None
+            if spd:
+                timing = {
+                    "preprocess": round(float(spd.get("preprocess", 0.0)), 1),
+                    "inference": round(float(spd.get("inference", 0.0)), 1),
+                    "postprocess": round(float(spd.get("postprocess", 0.0)), 1),
+                }
+        except Exception:
+            timing = {}
+        inference_ms = sum(timing.values()) if timing else wall_ms
 
         detections = []
         for r in results:
@@ -484,7 +522,7 @@ class InferenceEngine:
                     "y_max": xyxy[3],
                 })
 
-        return DetectionResult(detections, inference_ms, self._model_info.id)
+        return DetectionResult(detections, inference_ms, self._model_info.id, timing=timing)
 
     def _detect_onnx(self, image_bytes: bytes) -> DetectionResult:
         """ONNX inference — handles MobileNet SSD and EfficientDet."""
@@ -534,6 +572,7 @@ class InferenceEngine:
         input_size = info.input_size
         orig_h, orig_w = img.shape[:2]
 
+        _t_pre = time.perf_counter()
         # Letterbox resize to input_size x input_size
         scale = min(input_size / orig_w, input_size / orig_h)
         new_w, new_h = int(orig_w * scale), int(orig_h * scale)
@@ -548,12 +587,14 @@ class InferenceEngine:
         img_float = img_rgb.astype(np.float32) / 255.0
         img_chw = np.transpose(img_float, (2, 0, 1))
         img_batch = np.expand_dims(img_chw, axis=0)
+        preprocess_ms = (time.perf_counter() - _t_pre) * 1000
 
         input_name = self._model.get_inputs()[0].name
         t0 = time.perf_counter()
         outputs = self._model.run(None, {input_name: img_batch})
-        inference_ms = (time.perf_counter() - t0) * 1000
+        infer_ms = (time.perf_counter() - t0) * 1000
 
+        _t_post = time.perf_counter()
         # Parse Ultralytics ONNX output
         # Shape is typically [1, 84, N] where 84 = 4 box coords + 80 class scores
         # or [1, N, 84] depending on export version
@@ -592,8 +633,14 @@ class InferenceEngine:
                 "x_max": float(min(orig_w, x2)),
                 "y_max": float(min(orig_h, y2)),
             })
+        postprocess_ms = (time.perf_counter() - _t_post) * 1000
 
-        return DetectionResult(detections, inference_ms, info.id)
+        timing = {
+            "preprocess": round(preprocess_ms, 1),
+            "inference": round(infer_ms, 1),
+            "postprocess": round(postprocess_ms, 1),
+        }
+        return DetectionResult(detections, sum(timing.values()), info.id, timing=timing)
 
     def _detect_torchhub(self, image_bytes: bytes) -> DetectionResult:
         """YOLOv5 inference via torch.hub."""
@@ -921,16 +968,19 @@ def _onnx_providers(backend: str) -> list:
 # ---------------------------------------------------------------------------
 
 class ALPRResult:
-    """One recognized plate: text, overall confidence, and bounding box."""
+    """One recognized plate: text, overall confidence, bounding box, thumbnail."""
 
     def __init__(self, plate: str, confidence: float,
-                 x_min: float, y_min: float, x_max: float, y_max: float):
+                 x_min: float, y_min: float, x_max: float, y_max: float,
+                 thumbnail: str = ""):
         self.plate = plate
         self.confidence = confidence
         self.x_min = x_min
         self.y_min = y_min
         self.x_max = x_max
         self.y_max = y_max
+        # Base64 data-URI JPEG of the cropped plate region (may be empty)
+        self.thumbnail = thumbnail
 
 
 class ALPREngine:
@@ -1041,24 +1091,30 @@ class ALPREngine:
     def recognize(self, image_bytes: bytes) -> tuple:
         """
         Run ALPR on raw image bytes.
-        Returns (list[ALPRResult], inference_ms). Empty list if nothing found.
+        Returns (list[ALPRResult], inference_ms, timing). Empty list if nothing
+        found. `timing` is a dict {decode, inference} in ms. Each ALPRResult
+        carries a small base64 JPEG thumbnail of the cropped plate region.
         """
         if not self.is_loaded:
-            return [], 0.0
+            return [], 0.0, {}
 
         import numpy as np
         import cv2
+        import base64
 
+        _t_dec = time.perf_counter()
         nparr = np.frombuffer(image_bytes, np.uint8)
         img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
         if img is None:
             raise ValueError("Could not decode image")
+        decode_ms = (time.perf_counter() - _t_dec) * 1000
 
         with self._lock:
             t0 = time.perf_counter()
             raw = self._alpr.predict(img)
             inference_ms = (time.perf_counter() - t0) * 1000
 
+        img_h, img_w = img.shape[:2]
         results = []
         for r in raw:
             # fast-alpr returns objects with .detection (bbox + conf) and
@@ -1079,19 +1135,43 @@ class ALPREngine:
                     ocr_conf = sum(raw_ocr_conf) / len(raw_ocr_conf)
                 else:
                     ocr_conf = float(raw_ocr_conf or 1.0)
+
+                x1, y1, x2, y2 = float(bbox.x1), float(bbox.y1), float(bbox.x2), float(bbox.y2)
+
+                # Crop a small thumbnail of the plate region for the history
+                # modal. Pad slightly and clamp to image bounds, then encode a
+                # compact JPEG (~120px wide). Best-effort: never fail the read
+                # over a thumbnail.
+                thumb = ""
+                try:
+                    pad_x = (x2 - x1) * 0.08
+                    pad_y = (y2 - y1) * 0.18
+                    cx1 = max(0, int(x1 - pad_x)); cy1 = max(0, int(y1 - pad_y))
+                    cx2 = min(img_w, int(x2 + pad_x)); cy2 = min(img_h, int(y2 + pad_y))
+                    if cx2 > cx1 and cy2 > cy1:
+                        crop = img[cy1:cy2, cx1:cx2]
+                        th_w = 120
+                        if crop.shape[1] > th_w:
+                            th_h = max(1, int(crop.shape[0] * th_w / crop.shape[1]))
+                            crop = cv2.resize(crop, (th_w, th_h))
+                        ok, buf = cv2.imencode(".jpg", crop, [cv2.IMWRITE_JPEG_QUALITY, 70])
+                        if ok:
+                            thumb = "data:image/jpeg;base64," + base64.b64encode(buf).decode("ascii")
+                except Exception:
+                    thumb = ""
+
                 results.append(ALPRResult(
                     plate=str(ocr.text).strip().upper(),
                     confidence=det_conf * ocr_conf,
-                    x_min=float(bbox.x1),
-                    y_min=float(bbox.y1),
-                    x_max=float(bbox.x2),
-                    y_max=float(bbox.y2),
+                    x_min=x1, y_min=y1, x_max=x2, y_max=y2,
+                    thumbnail=thumb,
                 ))
             except Exception as e:
                 logger.warning(f"Skipping malformed ALPR result: {e}")
                 continue
 
-        return results, inference_ms
+        timing = {"decode": round(decode_ms, 1), "inference": round(inference_ms, 1)}
+        return results, round(decode_ms + inference_ms, 1), timing
 
 
 # ---------------------------------------------------------------------------

@@ -161,8 +161,10 @@ API_UPDATABLE_PATHS: set = {
     "detection.class_filter_enabled",
     "detection.allowed_classes",
     "alpr.min_confidence",
+    "alpr.plates_retention_days",
     "console.buffer_size",
     "console.hidden_levels",
+    "console.hide_backend_badge",
     "ui.theme",
     "ui.inference_update_ms",
     "ui.detection_expand",
@@ -185,10 +187,14 @@ _VALIDATORS = {
         lambda v: isinstance(v, list) and all(isinstance(x, str) for x in v) and len(v) <= 500,
     "alpr.min_confidence":
         lambda v: isinstance(v, (int, float)) and not isinstance(v, bool) and 0.0 <= float(v) <= 1.0,
+    "alpr.plates_retention_days":
+        lambda v: isinstance(v, int) and not isinstance(v, bool) and 0 <= v <= 3650,
     "console.buffer_size":
         lambda v: isinstance(v, int) and not isinstance(v, bool) and 100 <= v <= 100_000,
     "console.hidden_levels":
         lambda v: isinstance(v, list) and all(isinstance(x, str) for x in v) and len(v) <= 20,
+    "console.hide_backend_badge":
+        lambda v: isinstance(v, bool),
     "ui.theme":
         lambda v: isinstance(v, str) and 0 < len(v) <= 50,
     "ui.inference_update_ms":

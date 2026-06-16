@@ -1,4 +1,4 @@
-# Objectif.AI™
+# Objectif.AI
 
 **Self-hosted AI object detection server for BlueIris NVR — a drop-in CodeProject.AI replacement.**
 
@@ -26,11 +26,15 @@ For auto-start on login: run `setup-service.bat`. Full docs in the dashboard Hel
 
 - **Drop-in BlueIris replacement** — same API as CodeProject.AI, zero reconfiguration
 - **30+ detection models** — switch between them in the dashboard
-- **License-plate recognition (ALPR)** — full Blue Iris 5.9.9 Plate Recognizer SDK support
+- **License-plate recognition (ALPR)** — full Blue Iris 5.9.9 Plate Recognizer SDK support, with plate-crop thumbnails and full source image history that persists across restarts
+- **Plate storage** — every read saved to disk (crop + compressed full image), browsable in a history modal with inline full-image expand; configurable day-based retention
 - **Plate suppression list** — suppress known plates entirely or set per-plate cooldown timers (0–24h)
 - **Broad GPU support** — one-click CUDA or OpenVINO, plus DirectML for any DirectX 12 GPU (NVIDIA, AMD, or Intel)
 - **Legacy GPU support** — older NVIDIA cards (GTX 10-series, Tesla P4) work via ONNX Runtime
-- **Live console** with per-detection confidence, 11 themes, optional auto-start
+- **Diagnostic console** — per-line model/endpoint tag and backend badge (so a silent CPU fallback is obvious), preprocess/inference/postprocess timing split, per-detection confidence, and a per-type message filter
+- **Live system stats** — CPU, RAM, app memory, and uptime in the header
+- **Zero overhead when features are off** — ALPR storage, database, and background work only exist when ALPR is enabled and plates are being read
+- **11 themes**, optional auto-start on login
 
 ---
 
@@ -64,7 +68,8 @@ The Objectif.AI name and logo identify this project and may not be used to name,
 
 | Version | Notes |
 |---------|-------|
-| v0.8.0 | **Blue Iris 5.9.9 ALPR support.** Full Plate Recognizer SDK compatibility (`POST /` and `/v1/plate-reader/`). Fixed an ONNX Runtime provider conflict that stopped fast-alpr returning results on CUDA machines, and a per-character OCR confidence parsing bug. New dedicated **ALPR Settings** tab: engine config, global cooldown default, a per-plate suppression list with individual cooldown timers (0–24h or never), and a Blue Iris setup guide. Click the ALPR header pill to view recent plate history. New per-level **console filter** to show/hide message types. ALPR-off no longer spams the console when Blue Iris sends plate requests. |
+| v0.8.5.1 | **Persistent plate storage.** Every ALPR read saves a plate crop and compressed full source image to a `plates/` directory. SQLite database persists the last 1,000 reads across restarts. History modal adds inline "View Full" expand showing crop + full image side by side. Configurable day-based retention (default 30 days, 0 = keep forever). All storage is lazy-initialised — no files, no DB, zero overhead if ALPR is off. |
+| v0.8.5 | **Blue Iris 5.9.9 ALPR + console observability.** Full Plate Recognizer SDK compatibility (`POST /` and `/v1/plate-reader/`); fixed ONNX Runtime provider conflict and per-character OCR confidence bug. New ALPR Settings tab (engine config, global cooldown, per-plate suppression, Blue Iris setup guide). Console now shows model/endpoint tag, backend badge, and timing split. Header system stats (CPU/RAM/App/uptime). Per-type console filter. |
 | v0.7.9.2 | Fixed Dependencies tab 500 when an optional package (e.g. seaborn) has a broken import chain — version checks no longer execute modules |
 | v0.7.9.1 | Fixed DirectML/GPU installs silently no-op'ing — native runtime swaps now force-reinstall and prompt for the required restart |
 | v0.7.9 | DirectML backend (any DX12 GPU); ALPR via fast-alpr; fixed MobileNet/EfficientDet ONNX output routing |

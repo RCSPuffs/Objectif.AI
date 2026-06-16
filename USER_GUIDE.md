@@ -1,6 +1,6 @@
 # Objectif.AI User Guide
 
-**Version 0.8.0** | Open source under AGPL-3.0
+**Version 0.8.5.1** | Open source under AGPL-3.0
 
 ---
 
@@ -105,6 +105,24 @@ Use the **Known Plates** section of the ALPR Settings tab to manage which plates
 - **Always report** — always reports this plate regardless of the global default
 - **Duration (5 min – 24h)** — throttles re-reporting; the plate is reported once, then suppressed until the cooldown expires
 
+### Plate Storage and History
+
+Every plate read that passes your confidence threshold and suppression rules is saved to disk automatically:
+
+- **Plate crop** — a tight JPEG (~120px wide) of the detected plate region
+- **Full source image** — the complete frame Blue Iris sent, saved at ~55% JPEG quality (typically 80–150 KB)
+
+Both files live in a `plates/` directory inside your Objectif.AI folder. A SQLite database (`plates/plates.db`) tracks the reads, so history **persists across server restarts**. The directory, database, and all files are created lazily — nothing exists on disk until the first plate is actually read. If you never enable ALPR, no `plates/` directory is created at all.
+
+Click the **ALPR pill** in the header to open the plate history — the last 1000 reads, newest first, each showing:
+- A **plate crop thumbnail** inline
+- Plate text, timestamp, and confidence
+- A **View Full** button that expands inline showing the crop alongside the complete source image — invaluable for debugging misreads or reviewing what the camera actually saw
+
+**Retention** is configured in the ALPR Settings tab with a day-based slider (0 = keep forever, default 30 days). Records and their files are pruned automatically after each new read, so you never need to manually clear the directory. A hard cap of 10,000 records applies regardless of retention setting.
+
+> Note: the `plates/` directory and `plates.db` file can be safely deleted while the server is stopped. The history will simply start fresh.
+
 > Weights are fetched from Hugging Face on first use and cached locally. If that download host is ever unavailable, the first enable will fail until it is reachable again — already-cached weights keep working offline.
 
 ---
@@ -149,9 +167,35 @@ Each incoming image gets a shape symbol (●, ■, ▲, ◆, ★…). The matchi
 | WARN (amber) | Warnings |
 | ERR (red) | Errors |
 
-In **Settings → Display** toggle between expanded (each detected object on its own indented line, confidence color-coded green/amber/red) and compact (all on one line) display.
+### Tags and backend badges
 
-Use the **Filter ▾** button at the top-right of the console to choose which message types appear (requests, detections, plates, system, info, warnings, errors). The selection is saved and survives restarts — handy if you want a quiet console showing only plates, or a verbose one showing every request for troubleshooting.
+Each detection and ALPR line carries two small tags after the shape and time:
+
+- **Model/endpoint tag** — e.g. `detection · yolo11s`, `ALPR · fast-alpr`, or `ONNX · yolo11s`. Tells you which pipeline served the request at a glance.
+- **Backend badge** — `CUDA`, `CPU`, `DML`, or `OpenVINO`, colored so a GPU backend stands out. This reflects the backend **actually in use**, not the one requested — so if something silently falls back to CPU (a common cause of slow inference), you will see it immediately. ALPR always runs on CPU by design and its lines will correctly read `CPU`.
+
+You can hide the backend badge from the **Filter ▾** menu if you prefer a cleaner console.
+
+### Timing split
+
+In expanded display mode, each inference line is followed by a timing breakdown — `pre 3 · inf 22 · post 3 ms` for detection, or `decode 5 · inf 235 ms` for ALPR. This shows where the time actually goes, which is especially useful for tuning CPU-based ALPR (you can see whether plate detection or OCR dominates).
+
+### Display and filtering
+
+In **Settings → Display** toggle between expanded (each detected object on its own indented line, confidence color-coded green/amber/red, plus the timing split) and compact (all on one line) display.
+
+Use the **Filter ▾** button at the top-right of the console to choose which message types appear (requests, detections, plates, system, info, warnings, errors) and whether backend badges show. The selection is saved and survives restarts — handy if you want a quiet console showing only plates, or a verbose one showing every request for troubleshooting.
+
+### Header system stats
+
+The header shows live resource use, updated every few seconds:
+
+- **CPU** — overall system CPU load
+- **RAM** — system memory used (percent and GB)
+- **App** — how much memory Objectif.AI itself is using
+- **up** — how long the server has been running
+
+CPU and RAM turn amber above ~80% and red above ~90% so resource pressure is easy to spot. These stats require the `psutil` package (installed by default); if it is missing, the strip simply hides itself.
 
 ---
 
@@ -218,7 +262,16 @@ Click **Install DirectML** on the DirectML card in the Hardware tab (~20 MB), th
 ### My own car is being reported constantly
 - Go to **ALPR Settings → Known Plates**, add your plate, and set cooldown to **Never report**
 
-### GPU not being used
+### Plate images not appearing in history modal
+- Make sure ALPR is enabled and at least one plate has been read since the last restart
+- Check that the `plates/` directory exists inside your Objectif.AI folder
+- The history endpoint falls back to in-memory (current session only) if the DB hasn't been initialised yet
+
+### Disk usage growing from plate images
+- Reduce the **Plate Image Retention** slider in ALPR Settings (default 30 days)
+- Setting it to a lower value (e.g. 7 days) prunes old files automatically on the next plate read
+- You can also safely delete the `plates/` folder manually while the server is stopped — it will be recreated on the next plate read
+- **Quickest check:** look at the backend badge on any detection line in the console. If it reads `CPU` when you expect `CUDA`/`DML`/`OpenVINO`, the engine fell back to CPU — that is your confirmation the GPU isn't engaged.
 - Hardware tab — check status dots and package badges
 - Dependencies tab — check for missing packages
 - Use Set as Backend on the Hardware card

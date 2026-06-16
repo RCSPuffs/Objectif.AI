@@ -45,6 +45,7 @@ from downloader import download_manager
 from hardware import detect_hardware, hardware_info_to_dict
 from model_registry import get_all_models, get_model, model_to_dict
 from auth import verify_api_key, verify_websocket_key, get_or_create_api_key, is_first_run
+import plate_store
 from dependencies import check_all_dependencies, get_python_info
 
 # ---------------------------------------------------------------------------
@@ -127,6 +128,75 @@ async def _safe_ws_send(ws, payload: str):
         await ws.send_text(payload)
     except Exception:
         pass
+
+
+# ---------------------------------------------------------------------------
+# System stats -- CPU / RAM / process memory / uptime, polled on a timer and
+# pushed to the dashboard header over the same WebSocket as inference stats.
+# All values come from psutil (cross-platform). If psutil is unavailable the
+# poll loop disables itself and the header strip stays hidden.
+# ---------------------------------------------------------------------------
+
+
+def get_system_stats() -> dict:
+    """
+    Snapshot of system + process resource use. Returns {available: False} if
+    psutil isn't installed, so the frontend can hide the strip gracefully.
+    """
+    try:
+        import psutil
+    except Exception:
+        return {"available": False}
+
+    try:
+        vm = psutil.virtual_memory()
+        proc = psutil.Process(os.getpid())
+        proc_rss = proc.memory_info().rss
+        # cpu_percent with interval=None is non-blocking and reports usage
+        # since the previous call — the poll loop primes it, so readings are real.
+        cpu = psutil.cpu_percent(interval=None)
+        return {
+            "available": True,
+            "cpu_percent": round(cpu, 1),
+            "ram_percent": round(vm.percent, 1),
+            "ram_used_gb": round(vm.used / (1024 ** 3), 1),
+            "ram_total_gb": round(vm.total / (1024 ** 3), 1),
+            "app_ram_mb": round(proc_rss / (1024 ** 2), 0),
+            "uptime_seconds": int(time.time() - _start_time),
+        }
+    except Exception:
+        return {"available": False}
+
+
+def _broadcast_system_stats():
+    if not _inference_ws_clients:
+        return
+    stats = get_system_stats()
+    if not stats.get("available"):
+        return
+    payload = json.dumps({"type": "system_stats", **stats})
+    for ws in list(_inference_ws_clients):
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                asyncio.run_coroutine_threadsafe(_safe_ws_send(ws, payload), loop)
+        except Exception:
+            pass
+
+
+async def _system_stats_loop():
+    """Poll system stats every 3s and broadcast to connected dashboards."""
+    try:
+        import psutil
+        psutil.cpu_percent(interval=None)  # prime the first reading
+    except Exception:
+        return  # psutil missing — disable the loop entirely
+    while True:
+        await asyncio.sleep(3)
+        try:
+            _broadcast_system_stats()
+        except Exception:
+            pass
 
 
 # ---------------------------------------------------------------------------
@@ -430,10 +500,10 @@ async def lifespan(app: FastAPI):
     port = cfg["server"]["port"]
 
     _startup_log("=" * 50)
-    _startup_log("Objectif.AI v0.8.0 starting up")
+    _startup_log("Objectif.AI v0.8.5.1 starting up")
 
     console.system("=" * 55)
-    console.system("  Objectif.AI v0.8.0 starting up...")
+    console.system("  Objectif.AI v0.8.5.1 starting up...")
     console.system("=" * 55)
 
     # Hardware detection
@@ -513,10 +583,14 @@ async def lifespan(app: FastAPI):
 
     _service_running = True
 
+    # Start the background system-stats poll (CPU/RAM/uptime → dashboard header).
+    _stats_task = asyncio.create_task(_system_stats_loop())
+
     yield
 
     # Shutdown
     _service_running = False
+    _stats_task.cancel()
     _startup_log("Server shut down cleanly")
     console.system("Shutting down...")
 
@@ -527,7 +601,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Objectif.AI",
     description="Drop-in replacement for CodeProject.AI — BlueIris compatible",
-    version="0.8.0",
+    version="0.8.5.1",
     lifespan=lifespan,
 )
 
@@ -608,10 +682,15 @@ async def detect_objects(
         )
 
         # Log detection result (paired with request via shape)
+        _src = "onnx" if engine._engine_type in ("onnx", "onnx_legacy") else "detection"
         console.detection_result(
             shape_idx=shape_idx,
             detections=response["predictions"],
             inference_ms=result.inference_ms,
+            model=engine.model_info.name if engine.model_info else result.model_id,
+            backend=engine.active_backend,
+            timing=result.timing,
+            source=_src,
         )
 
         # Record for header inference stats
@@ -669,24 +748,26 @@ async def detect_alpr(
     threshold = max(0.0, min(1.0, float(threshold)))
 
     try:
-        results, inference_ms = alpr_engine.recognize(image_bytes)
-
-        # Log raw results before threshold filtering so we can diagnose confidence issues
-        if results:
-            raw_summary = ", ".join(f"{r.plate}={r.confidence:.3f}" for r in results)
-            console.system(f"ALPR raw results (threshold={threshold:.2f}): {raw_summary}")
-        else:
-            console.system(f"ALPR raw results: none detected by engine (threshold={threshold:.2f})")
+        results, inference_ms, timing = alpr_engine.recognize(image_bytes)
 
         predictions = []
+        plate_log = []
         for r in results:
             if r.confidence < threshold:
-                console.system(f"ALPR filtered out {r.plate} (conf={r.confidence:.3f} < threshold={threshold:.2f})")
                 continue
             if _plate_is_suppressed(r.plate):
                 console.system(f"ALPR suppressed {r.plate} (cooldown active)")
                 continue
             _record_plate_seen(r.plate)
+            thumb = getattr(r, "thumbnail", "")
+            plate_store.save_plate_read(
+                plate=r.plate,
+                confidence=r.confidence,
+                thumbnail_b64=thumb,
+                full_image_bytes=image_bytes,
+                config=cfg,
+                source="alpr",
+            )
             predictions.append({
                 "label": r.plate,
                 "plate": r.plate,
@@ -695,6 +776,11 @@ async def detect_alpr(
                 "y_min": int(r.y_min),
                 "x_max": int(r.x_max),
                 "y_max": int(r.y_max),
+            })
+            plate_log.append({
+                "plate": r.plate,
+                "confidence": round(r.confidence, 4),
+                "thumbnail": thumb,
             })
 
         response = {
@@ -712,8 +798,11 @@ async def detect_alpr(
 
         console.alpr_result(
             shape_idx=shape_idx,
-            plates=predictions,
+            plates=plate_log,
             inference_ms=inference_ms,
+            model="fast-alpr",
+            backend=alpr_engine.active_backend if hasattr(alpr_engine, "active_backend") else "CPU",
+            timing=timing,
         )
         _record_inference(inference_ms)
         return JSONResponse(response)
@@ -770,24 +859,27 @@ async def plate_reader_compat(
     threshold = max(0.0, min(1.0, float(threshold)))
 
     try:
-        results, inference_ms = alpr_engine.recognize(image_bytes)
-
-        # Log raw results before threshold filtering so we can diagnose confidence issues
-        if results:
-            raw_summary = ", ".join(f"{r.plate}={r.confidence:.3f}" for r in results)
-            console.system(f"ALPR raw results (threshold={threshold:.2f}): {raw_summary}")
-        else:
-            console.system(f"ALPR raw results: none detected by engine (threshold={threshold:.2f})")
+        results, inference_ms, timing = alpr_engine.recognize(image_bytes)
 
         pr_results = []
+        plate_log = []
         for r in results:
             if r.confidence < threshold:
-                console.system(f"ALPR filtered out {r.plate} (conf={r.confidence:.3f} < threshold={threshold:.2f})")
                 continue
             if _plate_is_suppressed(r.plate):
                 console.system(f"ALPR suppressed {r.plate} (cooldown active)")
                 continue
             _record_plate_seen(r.plate)
+            thumb = getattr(r, "thumbnail", "")
+            # Persist to disk + SQLite (best-effort, async, ALPR-only)
+            plate_store.save_plate_read(
+                plate=r.plate,
+                confidence=r.confidence,
+                thumbnail_b64=thumb,
+                full_image_bytes=image_bytes,
+                config=cfg,
+                source="alpr",
+            )
             pr_results.append({
                 "plate": r.plate,
                 "score": round(r.confidence, 4),
@@ -800,12 +892,19 @@ async def plate_reader_compat(
                 "vehicle": {"type": "Car", "score": 0.9},
                 "region": {"code": (regions or "").split(",")[0].strip().lower() or ""},
             })
+            plate_log.append({
+                "plate": r.plate,
+                "confidence": round(r.confidence, 4),
+                "thumbnail": thumb,
+            })
 
         console.alpr_result(
             shape_idx=shape_idx,
-            plates=[{"label": r["plate"], "plate": r["plate"],
-                     "confidence": r["score"]} for r in pr_results],
+            plates=plate_log,
             inference_ms=inference_ms,
+            model="fast-alpr",
+            backend=alpr_engine.active_backend if hasattr(alpr_engine, "active_backend") else "CPU",
+            timing=timing,
         )
         _record_inference(inference_ms)
 
@@ -841,7 +940,7 @@ async def status():
     """CPAI-compatible status endpoint."""
     return {
         "status": "OK",
-        "version": "0.8.0",
+        "version": "0.8.5.1",
         "platform": "Windows",
         "systemInfo": {
             "model": engine.model_info.name if engine.model_info else "None",
@@ -881,6 +980,12 @@ async def api_status(api_key: str = Depends(verify_api_key)):
         "last_plate": alpr_s["last_plate"],
         "plate_count_24h": alpr_s["count_24h"],
     }
+
+
+@app.get("/api/system-stats")
+async def api_system_stats(api_key: str = Depends(verify_api_key)):
+    """Live CPU / RAM / process-memory / uptime snapshot for the header strip."""
+    return get_system_stats()
 
 
 @app.get("/api/hardware")
@@ -1256,11 +1361,50 @@ async def api_alpr_history(
     api_key: str = Depends(verify_api_key),
 ):
     """
-    Return the last N plates reported to Blue Iris (in-memory, resets on restart).
-    Each entry: {plate, timestamp, confidence} sorted newest-first.
+    Return the last N plate reads from persistent storage (SQLite), newest-first.
+    Survives server restarts. Falls back to in-memory if ALPR has never written
+    to disk this install (store not yet initialised).
+
+    Each entry: {id, plate, confidence, timestamp, crop_file, full_file}.
+    Use /api/alpr/image/{filename} to serve the actual files.
     """
+    db_rows = plate_store.get_history(limit)
+    if db_rows:
+        return {"plates": db_rows, "count": len(db_rows), "source": "db"}
+    # Fallback: in-memory history from this session
     reads = list(console.get_plate_history(limit))
-    return {"plates": reads, "count": len(reads)}
+    return {"plates": reads, "count": len(reads), "source": "memory"}
+
+
+@app.get("/api/alpr/image/{filename}")
+async def api_alpr_image(filename: str, request: Request, key: Optional[str] = None):
+    """
+    Serve a plate image file (crop or full) from the plates directory.
+    Accepts the API key either via X-Api-Key header (API calls) or ?key=
+    query parameter (browser <img> tags, which cannot set headers).
+    """
+    from auth import get_or_create_api_key
+    import secrets as _sec
+    expected = get_or_create_api_key()
+    provided = key or request.headers.get("x-api-key", "")
+    if not provided or not _sec.compare_digest(provided, expected):
+        raise HTTPException(status_code=401, detail="Invalid or missing API key")
+    # Strict filename validation — no slashes, no dotdot
+    if "/" in filename or "\\" in filename or ".." in filename:
+        raise HTTPException(status_code=400, detail="Invalid filename")
+    if not re.match(r"^[\w\-]+\.jpe?g$", filename, re.IGNORECASE):
+        raise HTTPException(status_code=400, detail="Invalid filename")
+
+    plates_dir = plate_store.get_plates_dir()
+    if plates_dir is None:
+        raise HTTPException(status_code=404, detail="Plate store not initialised")
+
+    img_path = plates_dir / filename
+    if not img_path.exists():
+        raise HTTPException(status_code=404, detail="Image not found")
+
+    from fastapi.responses import FileResponse
+    return FileResponse(str(img_path), media_type="image/jpeg")
 
 
 @app.get("/api/alpr/suppression")

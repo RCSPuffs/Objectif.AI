@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Objectif.AI v0.8.0</title>
+<title>Objectif.AI v0.8.5.1</title>
 <style>
 /* ── Theme variables ─────────────────────────────────── */
 :root {
@@ -99,6 +99,12 @@ html,body{height:100%;background:var(--bg-0);color:var(--text-primary);font-fami
 .log-shape{display:inline-block;width:20px;text-align:center;flex-shrink:0;font-size:11px}
 .log-time{display:inline-block;width:72px;flex-shrink:0;color:var(--text-dim);font-size:11px}
 .log-level-badge{display:inline-block;width:72px;flex-shrink:0;font-size:10px;text-transform:uppercase;letter-spacing:.5px;padding-right:8px}
+.log-tag{flex-shrink:0;font-size:10px;color:var(--text-dim);background:var(--bg-3);border:1px solid var(--border);border-radius:3px;padding:0 5px;margin-right:6px;white-space:nowrap}
+.log-backend{flex-shrink:0;font-size:9px;font-weight:600;letter-spacing:.5px;border-radius:3px;padding:0 5px;margin-right:6px;white-space:nowrap}
+.log-backend.bk-cuda{background:rgba(118,185,0,.15);color:#76b900;border:1px solid rgba(118,185,0,.4)}
+.log-backend.bk-gpu{background:rgba(0,160,220,.15);color:var(--cyan);border:1px solid rgba(0,160,220,.4)}
+.log-backend.bk-cpu{background:var(--bg-3);color:var(--text-secondary);border:1px solid var(--border)}
+.log-timing .log-timing-text{font-family:var(--font-mono);font-size:11px;color:var(--text-dim)}
 .log-msg{flex:1;word-break:break-word}
 .level-info .log-level-badge,.level-info .log-msg{color:var(--log-info)}
 .level-success .log-level-badge,.level-success .log-msg{color:var(--log-success)}
@@ -304,6 +310,8 @@ select:focus{border-color:var(--amber)}
 #plate-modal-body tr:last-child td{border-bottom:none}
 #plate-modal-body tr:hover td{background:var(--bg-2)}
 .plate-modal-plate{font-family:var(--font-mono);font-size:13px;font-weight:700;color:var(--text-primary)}
+.plate-thumb{height:32px;max-width:120px;border-radius:3px;border:1px solid var(--border);display:block;object-fit:contain;background:var(--bg-3)}
+.plate-thumb-none{color:var(--text-dim);font-size:14px}
 .plate-modal-conf{font-family:var(--font-mono)}
 #plate-modal-empty{padding:32px;text-align:center;color:var(--text-dim);font-size:13px}
 
@@ -335,6 +343,13 @@ select:focus{border-color:var(--amber)}
       <span class="inf-label">24h</span><span id="alpr-24h" style="font-family:var(--font-mono);color:var(--text-secondary);font-size:11px">0</span>
     </div>
     <div class="header-pill"><span style="color:var(--text-dim)">up</span><span id="uptime" class="label">00:00:00</span></div>
+    <div class="header-pill" id="sysstats-pill" style="display:none">
+      <span style="color:var(--text-dim)">CPU</span><span id="stat-cpu" class="label" style="font-family:var(--font-mono)">—</span>
+      <span class="inf-sep">|</span>
+      <span style="color:var(--text-dim)">RAM</span><span id="stat-ram" class="label" style="font-family:var(--font-mono)">—</span>
+      <span class="inf-sep">|</span>
+      <span style="color:var(--text-dim)">App</span><span id="stat-app" class="label" style="font-family:var(--font-mono)">—</span>
+    </div>
     <div class="spacer"></div>
     <div id="hw-summary"></div>
   </div>
@@ -374,6 +389,8 @@ select:focus{border-color:var(--amber)}
               <button class="btn-small" id="lf-all">All</button>
               <button class="btn-small" id="lf-none">None</button>
             </div>
+            <div class="log-filter-title" style="margin-top:8px;border-top:1px solid var(--border);border-bottom:none;padding-top:8px">Display options</div>
+            <label class="log-filter-row"><input type="checkbox" id="lf-backend-badge" checked><span class="lf-dot" style="background:var(--cyan)"></span>Backend badges (CUDA/CPU)</label>
           </div>
         </div>
         <button class="btn-small" id="btn-clear">Clear</button>
@@ -513,10 +530,21 @@ select:focus{border-color:var(--amber)}
             </div>
           </div>
           <div class="settings-row">
+            <div class="settings-label">
+              <div class="settings-label-title">Plate Image Retention</div>
+              <div class="settings-label-desc">How long to keep plate crop and full-image files on disk. 0 = keep forever. Files and DB records are pruned after each new read.</div>
+            </div>
+            <div class="settings-control" style="flex-direction:column;align-items:flex-end;gap:4px">
+              <input type="range" id="alpr2-retention-slider" min="0" max="365" value="30" step="1">
+              <div class="slider-value" id="alpr2-retention-value" style="min-width:80px;text-align:right">30 days</div>
+            </div>
+          </div>
+          <div class="settings-row">
             <div class="settings-label"><div class="settings-label-title">Apply Model Changes</div><div class="settings-label-desc">Reloads the ALPR pipeline with the selected models</div></div>
             <div class="settings-control"><button class="btn btn-secondary" id="alpr2-reload">Reload ALPR</button></div>
           </div>
           <div id="alpr2-status-line" class="settings-status-line"></div>
+          <div class="settings-note" style="margin-top:8px">Plate crop and full-image files are saved to <code>plates/</code> inside the Objectif.AI directory when a plate is read. The directory and database are only created on the first plate read — no files are written if ALPR is off.</div>
         </div>
       </div>
 
@@ -620,7 +648,7 @@ select:focus{border-color:var(--amber)}
     <!-- HELP -->
     <div class="panel" id="panel-help">
       <h1>Objectif.AI&trade; User Guide</h1>
-      <p style="color:var(--text-dim);font-size:12px;margin-bottom:4px">v0.8.0 — Open source under AGPL-3.0 · <a href="https://github.com/RCSPuffs/Objectif.AI" target="_blank" rel="noopener" style="color:var(--cyan)">Source code</a></p>
+      <p style="color:var(--text-dim);font-size:12px;margin-bottom:4px">v0.8.5.1 — Open source under AGPL-3.0 · <a href="https://github.com/RCSPuffs/Objectif.AI" target="_blank" rel="noopener" style="color:var(--cyan)">Source code</a></p>
 
       <h2>Quick Start</h2>
       <ol>
@@ -697,7 +725,9 @@ select:focus{border-color:var(--amber)}
         <li><span style="color:var(--log-error)">ERR</span> — errors</li>
       </ul>
       <p>Toggle between expanded (each item on its own line, color-coded by confidence) and compact display in <strong>Settings → Display</strong>.</p>
-      <p>Use the <strong>Filter ▾</strong> button at the top-right of the console to choose which message types are shown (requests, detections, plates, system, warnings, etc.). Your selection is saved and persists across restarts.</p>
+      <p>Each detection and ALPR line carries a <strong>model/endpoint tag</strong> (e.g. <code>detection · yolo11s</code>, <code>ALPR · fast-alpr</code>) and a <strong>backend badge</strong> (<code>CUDA</code>, <code>CPU</code>, <code>DML</code>, <code>OpenVINO</code>). The badge shows the backend <em>actually in use</em>, so a silent fallback to CPU is immediately visible. In expanded mode, lines also show a <strong>timing split</strong> (preprocess / inference / postprocess, or decode / inference for ALPR) so you can see where the time goes.</p>
+      <p>Use the <strong>Filter ▾</strong> button at the top-right of the console to choose which message types are shown (requests, detections, plates, system, warnings, etc.) and whether backend badges appear. Your selection is saved and persists across restarts.</p>
+      <p>The <strong>header strip</strong> shows live CPU, system RAM, this app's memory use, and uptime, refreshed every few seconds. CPU and RAM turn amber/red under load. (Requires <code>psutil</code>, installed by default.)</p>
 
       <h2>Hardware &amp; GPU Setup</h2>
       <h3>NVIDIA CUDA</h3>
@@ -721,8 +751,8 @@ select:focus{border-color:var(--amber)}
       <p><strong>Class Filter:</strong> When enabled, only selected COCO classes are returned. Click a category header to toggle all classes in that group at once.</p>
 
       <h2>License-Plate Recognition (ALPR)</h2>
-      <p>Optional, off by default. Uses the MIT-licensed <a href="https://github.com/ankandrew/fast-alpr" target="_blank" style="color:var(--blue)">fast-alpr</a> pipeline (plate detection + OCR). Enable it in <strong>Settings → License Plate Recognition</strong>; the first enable downloads the model weights from Hugging Face.</p>
-      <p>ALPR serves on its own endpoint, <code>/v1/vision/alpr</code> — add it as a second BlueIris AI entry. Larger detector input sizes are more accurate but slower. Apply it only to cameras watching a road or driveway.</p>
+      <p>Optional, off by default. Uses the MIT-licensed <a href="https://github.com/ankandrew/fast-alpr" target="_blank" style="color:var(--blue)">fast-alpr</a> pipeline (plate detection + OCR). Enable and configure it in the <strong>ALPR Settings</strong> tab; the first enable downloads the model weights from Hugging Face.</p>
+      <p>Blue Iris 5.9.9+ connects to ALPR via the Plate Recognizer SDK — see the setup guide in the ALPR Settings tab. Use the <strong>Known Plates</strong> list to suppress your own vehicles or throttle frequent ones. Click the <strong>ALPR header pill</strong> to review the last 1000 plate reads with crop thumbnails and full source images. Plate files are saved to a <code>plates/</code> directory and persist across restarts. Retention is configurable (default 30 days). No files are created if ALPR is off.</p>
 
       <h2>Themes</h2>
       <p>10 themes in <strong>Settings → Display</strong>: Dark, Light, Solarized, Dracula, Nord, Gruvbox, Monokai, Ocean, Forest, Rose, Hi-Contrast. Saved in <code>config.yaml</code>, applies to all browsers.</p>
@@ -786,9 +816,11 @@ select:focus{border-color:var(--amber)}
       <table id="plate-modal-table" style="display:none">
         <thead>
           <tr>
+            <th>Crop</th>
             <th>Plate</th>
             <th>Time</th>
             <th>Confidence</th>
+            <th></th>
           </tr>
         </thead>
         <tbody id="plate-modal-tbody"></tbody>
@@ -809,6 +841,7 @@ const state = {
   activePanel: 'console', modelFilter: 'all',
   consolePaused: false, consoleAtBottom: true,
   hiddenLogLevels: new Set(),
+  hideBackendBadge: false,
   ws: null, wsReconnectTimer: null,
   allowedClasses: new Set(), cocoGroups: {},
   infUpdateMs: 1000, infLastRaw: null, infAvgRaw: null, infDisplayTimer: null,
@@ -842,10 +875,18 @@ async function boot() {
   connectWS();
   await fetchStatus();
   await loadConfig();
+  fetchSystemStats();
   startInferenceDisplayTimer();
   setInterval(fetchStatus, 5000);
   setInterval(() => { if (state.activePanel === 'models') loadModels(); }, 3000);
   setInterval(() => { if (state.activePanel === 'hardware') loadInstallStatus(); }, 10000);
+}
+
+async function fetchSystemStats() {
+  try {
+    const res = await api('GET', '/api/system-stats');
+    if (res.ok) handleSystemStats(await res.json());
+  } catch {}
 }
 
 // ============================================================
@@ -878,6 +919,7 @@ async function connectWS() {
     else if (msg.type === 'history') msg.entries.forEach(appendLogEntry);
     else if (msg.type === 'download_progress') handleDownloadProgress(msg.data);
     else if (msg.type === 'inference_stats') handleInferenceStats(msg);
+    else if (msg.type === 'system_stats') handleSystemStats(msg);
     else if (msg.type === 'install_output') handleInstallOutput(msg);
     else if (msg.type === 'ping') ws.send('ping');
   };
@@ -900,6 +942,23 @@ function setWsStatus(s) {
 //  INFERENCE STATS
 // ============================================================
 function handleInferenceStats(msg) { state.infLastRaw = msg.last_ms; state.infAvgRaw = msg.avg_ms; }
+
+function handleSystemStats(msg) {
+  if (!msg.available) return;
+  const pill = document.getElementById('sysstats-pill');
+  pill.style.display = '';
+  const cpu = document.getElementById('stat-cpu');
+  const ram = document.getElementById('stat-ram');
+  const app = document.getElementById('stat-app');
+  // CPU
+  cpu.textContent = `${Math.round(msg.cpu_percent)}%`;
+  cpu.style.color = msg.cpu_percent >= 90 ? 'var(--red)' : msg.cpu_percent >= 80 ? 'var(--amber)' : 'var(--text-primary)';
+  // RAM (percent + absolute)
+  ram.textContent = `${Math.round(msg.ram_percent)}% · ${msg.ram_used_gb}/${msg.ram_total_gb}G`;
+  ram.style.color = msg.ram_percent >= 90 ? 'var(--red)' : msg.ram_percent >= 80 ? 'var(--amber)' : 'var(--text-primary)';
+  // App process memory
+  app.textContent = msg.app_ram_mb >= 1024 ? `${(msg.app_ram_mb/1024).toFixed(1)}G` : `${Math.round(msg.app_ram_mb)}M`;
+}
 function startInferenceDisplayTimer() {
   if (state.infDisplayTimer) clearInterval(state.infDisplayTimer);
   state.infDisplayTimer = setInterval(() => {
@@ -987,8 +1046,35 @@ function appendLogEntry(entry) {
   }
   const div = document.createElement('div');
   div.className = `log-line level-${entry.level}`;
-  div.innerHTML = `${shapeHtml}<span class="log-time">${time}</span><span class="log-level-badge">${lvlMap[entry.level]||entry.level}</span><span class="log-msg">${esc(summaryMsg)}</span>`;
+  // Build the model/endpoint tag + backend badge for inference lines
+  let tagHtml = '';
+  if ((isDetection || isAlpr) && !state.hideBackendBadge) {
+    const srcLabel = entry.source === 'alpr' ? 'ALPR' : entry.source === 'onnx' ? 'ONNX' : 'detection';
+    const modelLabel = entry.model ? `${srcLabel} · ${esc(entry.model)}` : srcLabel;
+    tagHtml += `<span class="log-tag">${modelLabel}</span>`;
+    if (entry.backend) {
+      const bk = String(entry.backend).toLowerCase();
+      const bkClass = bk.includes('cuda') ? 'bk-cuda' : (bk.includes('dml')||bk.includes('openvino')||bk.includes('rocm')) ? 'bk-gpu' : 'bk-cpu';
+      tagHtml += `<span class="log-backend ${bkClass}">${esc(entry.backend)}</span>`;
+    }
+  }
+  div.innerHTML = `${shapeHtml}<span class="log-time">${time}</span><span class="log-level-badge">${lvlMap[entry.level]||entry.level}</span>${tagHtml}<span class="log-msg">${esc(summaryMsg)}</span>`;
   log.appendChild(div);
+  // Timing split (expanded mode only) — shown as its own detail line
+  if ((isDetection || isAlpr) && expand && entry.timing && Object.keys(entry.timing).length) {
+    const t = entry.timing;
+    const parts = [];
+    if ('preprocess' in t) parts.push(`pre ${t.preprocess}`);
+    if ('decode' in t) parts.push(`decode ${t.decode}`);
+    if ('inference' in t) parts.push(`inf ${t.inference}`);
+    if ('postprocess' in t) parts.push(`post ${t.postprocess}`);
+    if (parts.length) {
+      const td = document.createElement('div');
+      td.className = 'log-detail log-timing';
+      td.innerHTML = `<span class="log-detail-indent"></span><span class="log-detail-bullet">·</span><span class="log-timing-text">${parts.join('  ·  ')} ms</span>`;
+      log.appendChild(td);
+    }
+  }
   if ((isDetection || isAlpr) && expand && hasDets) {
     const groups = {}; const order = [];
     entry.detections.forEach(d => { const lbl = isAlpr ? (d.plate || d.label) : d.label; if (!groups[lbl]) { groups[lbl] = []; order.push(lbl); } groups[lbl].push(d.confidence); });
@@ -1048,6 +1134,10 @@ document.getElementById('lf-all').addEventListener('click', () => {
 document.getElementById('lf-none').addEventListener('click', () => {
   ['request','detection','alpr','system','info','success','warning','error'].forEach(l => state.hiddenLogLevels.add(l));
   applyLogFilterState(); saveLogFilter();
+});
+document.getElementById('lf-backend-badge').addEventListener('change', async function() {
+  state.hideBackendBadge = !this.checked;
+  await api('POST', '/api/config', {'console.hide_backend_badge': state.hideBackendBadge});
 });
 
 // ============================================================
@@ -1372,6 +1462,9 @@ async function loadConfig() {
     state.allowedClasses = new Set(state.config.detection?.allowed_classes||[]);
     document.getElementById('buffer-select').value = String(state.config.console?.buffer_size||1000);
     state.hiddenLogLevels = new Set(state.config.console?.hidden_levels || []);
+    state.hideBackendBadge = !!state.config.console?.hide_backend_badge;
+    const lfBadge = document.getElementById('lf-backend-badge');
+    if (lfBadge) lfBadge.checked = !state.hideBackendBadge;
     applyLogFilterState();
 
     const infMs = state.config.ui?.inference_update_ms||1000;
@@ -1589,9 +1682,11 @@ async function openPlateModal() {
     if (!res.ok) throw new Error('fetch failed');
     const data = await res.json();
     const plates = data.plates || [];
+    const isPersistent = data.source === 'db';
 
     document.getElementById('plate-modal-count').textContent =
-      plates.length === 0 ? '' : `${plates.length} read${plates.length !== 1 ? 's' : ''} this session`;
+      plates.length === 0 ? '' :
+      `${plates.length} read${plates.length !== 1 ? 's' : ''}${isPersistent ? ' (persistent)' : ' (this session)'}`;
 
     if (plates.length === 0) {
       document.getElementById('plate-modal-empty').style.display = 'block';
@@ -1600,26 +1695,79 @@ async function openPlateModal() {
 
     const tbody = document.getElementById('plate-modal-tbody');
     tbody.innerHTML = '';
+
     plates.forEach(p => {
       const d = new Date(p.timestamp * 1000);
       const timeStr = [d.getHours(), d.getMinutes(), d.getSeconds()]
         .map(n => String(n).padStart(2, '0')).join(':');
       const dateStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-      const pct = Math.round(p.confidence * 100);
+      const pct = Math.round((p.confidence || 0) * 100);
       const confColor = pct >= 80 ? 'var(--green)' : pct >= 50 ? 'var(--amber)' : 'var(--red)';
+
+      // Crop — prefer in-memory thumbnail, fall back to served file
+      let thumbHtml = '<span class="plate-thumb-none">—</span>';
+      if (p.thumbnail) {
+        thumbHtml = `<img class="plate-thumb" src="${p.thumbnail}" alt="crop" loading="lazy">`;
+      } else if (p.crop_file) {
+        thumbHtml = `<img class="plate-thumb" src="/api/alpr/image/${esc(p.crop_file)}?key=${encodeURIComponent(state.apiKey)}" alt="crop" loading="lazy">`;
+      }
+
+      const hasFullImg = !!p.full_file;
+      const rowId = `pr-${p.id || p.timestamp}`;
+
       const tr = document.createElement('tr');
+      tr.id = rowId;
       tr.innerHTML = `
+        <td>${thumbHtml}</td>
         <td><span class="plate-modal-plate">${esc(p.plate)}</span></td>
-        <td>${dateStr} ${timeStr}</td>
-        <td><span class="plate-modal-conf" style="color:${confColor}">${pct}%</span></td>`;
+        <td style="white-space:nowrap">${dateStr} ${timeStr}</td>
+        <td><span class="plate-modal-conf" style="color:${confColor}">${pct}%</span></td>
+        <td>${hasFullImg ? `<button class="btn-small" onclick="toggleFullImage('${rowId}','${esc(p.full_file)}','${esc(p.crop_file||'')}')">View Full</button>` : ''}</td>`;
       tbody.appendChild(tr);
+
+      // Expandable full-image row (hidden initially)
+      if (hasFullImg) {
+        const expandTr = document.createElement('tr');
+        expandTr.id = `${rowId}-expand`;
+        expandTr.style.display = 'none';
+        expandTr.innerHTML = `<td colspan="5" style="padding:10px 14px;background:var(--bg-2)">
+          <div style="display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap">
+            <div>
+              <div style="font-size:10px;color:var(--text-dim);margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px">Plate Crop</div>
+              ${p.thumbnail
+                ? `<img src="${p.thumbnail}" style="height:60px;border-radius:4px;border:1px solid var(--border)" alt="crop">`
+                : `<img src="/api/alpr/image/${esc(p.crop_file||'')}?key=${encodeURIComponent(state.apiKey)}" style="height:60px;border-radius:4px;border:1px solid var(--border)" alt="crop">`
+              }
+            </div>
+            <div style="flex:1;min-width:200px">
+              <div style="font-size:10px;color:var(--text-dim);margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px">Full Source Image</div>
+              <img id="${rowId}-full-img"
+                src="/api/alpr/image/${esc(p.full_file)}?key=${encodeURIComponent(state.apiKey)}"
+                style="max-width:100%;max-height:320px;border-radius:4px;border:1px solid var(--border);display:block"
+                alt="full image" loading="lazy">
+            </div>
+          </div>
+        </td>`;
+        tbody.appendChild(expandTr);
+      }
     });
+
     document.getElementById('plate-modal-table').style.display = 'table';
   } catch (e) {
     document.getElementById('plate-modal-count').textContent = 'Failed to load';
     document.getElementById('plate-modal-empty').style.display = 'block';
     document.getElementById('plate-modal-empty').textContent = `Error: ${e.message}`;
   }
+}
+
+function toggleFullImage(rowId, fullFile, cropFile) {
+  const expandTr = document.getElementById(`${rowId}-expand`);
+  if (!expandTr) return;
+  const isHidden = expandTr.style.display === 'none';
+  expandTr.style.display = isHidden ? '' : 'none';
+  // Find the button and update its label
+  const btn = document.querySelector(`#${rowId} button`);
+  if (btn) btn.textContent = isHidden ? 'Hide' : 'View Full';
 }
 
 document.getElementById('plate-modal-close').addEventListener('click', () => {
@@ -1667,6 +1815,11 @@ async function loadAlprStatus2() {
     const conf = Math.round((a.min_confidence ?? 0.3) * 100);
     document.getElementById('alpr2-conf-slider').value = conf;
     document.getElementById('alpr2-conf-value').textContent = `${conf}%`;
+
+    // Retention
+    const retention = parseInt(state.config?.alpr?.plates_retention_days ?? 30);
+    document.getElementById('alpr2-retention-slider').value = Math.min(365, Math.max(0, retention));
+    document.getElementById('alpr2-retention-value').textContent = fmtRetention(retention);
 
     updateAlprStatusLine2();
   } catch {}
@@ -1721,6 +1874,22 @@ document.getElementById('alpr2-conf-slider').addEventListener('input', function(
 });
 document.getElementById('alpr2-conf-slider').addEventListener('change', async function() {
   await api('POST', '/api/config', {'alpr.min_confidence': parseInt(this.value)/100});
+});
+// Retention slider
+function fmtRetention(days) {
+  const d = parseInt(days);
+  if (d === 0) return 'Keep forever';
+  if (d === 1) return '1 day';
+  if (d < 30) return `${d} days`;
+  if (d === 30) return '30 days';
+  if (d < 365) return `${Math.round(d/7)} weeks`;
+  return '1 year';
+}
+document.getElementById('alpr2-retention-slider').addEventListener('input', function() {
+  document.getElementById('alpr2-retention-value').textContent = fmtRetention(this.value);
+});
+document.getElementById('alpr2-retention-slider').addEventListener('change', async function() {
+  await api('POST', '/api/config', {'alpr.plates_retention_days': parseInt(this.value)});
 });
 
 // --- Global cooldown slider ---
