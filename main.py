@@ -1244,6 +1244,7 @@ ALPR_DETECTOR_MODELS = [
 ALPR_OCR_MODELS = [
     "cct-xs-v2-global-model",
     "cct-s-v1-global-model",
+    "cct-s-v2-global-model",
     "global-plates-mobile-vit-v2-model",
 ]
 
